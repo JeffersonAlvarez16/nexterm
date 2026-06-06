@@ -1,7 +1,16 @@
 {
   "name": "nexterm",
   "private": true,
-  "version": "0.2.2",
+  "version": "0.2.3",
+  "author": "Jefferson Alvarez",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JeffersonAlvarez16/nexterm.git"
+  },
+  "homepage": "https://github.com/JeffersonAlvarez16/nexterm#readme",
+  "bugs": {
+    "url": "https://github.com/JeffersonAlvarez16/nexterm/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

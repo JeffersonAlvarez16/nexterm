@@ -1,5 +1,5 @@
 # ============================================================================
-# Release Workflow for NexTerm (RemoteKit)
+# Release Workflow for NexTerm
 # ============================================================================
 #
 # AUTO-UPDATE SIGNING SETUP (required before first release):
@@ -33,7 +33,7 @@
 #   - The app checks https://github.com/{owner}/{repo}/releases/latest/download/latest.json
 # ============================================================================
 
-name: Release RemoteKit
+name: Release NexTerm
 
 on:
   push:
@@ -123,9 +123,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "RemoteKit ${{ github.ref_name }}"
+          releaseName: "NexTerm ${{ github.ref_name }}"
           releaseBody: |
-            ## RemoteKit ${{ github.ref_name }}
+            ## NexTerm ${{ github.ref_name }}
 
             ### Descargas / Downloads
             | Plataforma | Archivo |
