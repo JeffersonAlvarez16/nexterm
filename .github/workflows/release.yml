@@ -40,6 +40,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version to publish (for example: v0.2.3 or 0.2.3)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -115,6 +120,44 @@ jobs:
       - name: Run Rust tests
         run: cd src-tauri && cargo test
 
+      - name: Extract release notes from changelog
+        id: release_notes
+        shell: bash
+        run: |
+          REF_NAME="${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}"
+          VERSION="${REF_NAME#v}"
+          TAG_NAME="v${VERSION}"
+          NOTES="$(awk -v version="$VERSION" '
+            $0 ~ "^## \\[" version "\\]" { capture = 1; next }
+            capture && $0 ~ "^## \\[" { capture = 0 }
+            capture { print }
+          ' CHANGELOG.md | sed '/^[[:space:]]*$/d')"
+
+          if [ -z "$NOTES" ]; then
+            echo "Exact release notes for ${TAG_NAME} were not found in CHANGELOG.md." >&2
+            exit 1
+          fi
+
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo 'body<<EOF'
+            echo "## NexTerm ${TAG_NAME}"
+            echo
+            echo "$NOTES"
+            echo
+            echo '### Downloads'
+            echo '| Platform | Artifact |'
+            echo '|---|---|'
+            echo '| macOS Apple Silicon | `.dmg` |'
+            echo '| macOS Intel | `.dmg` |'
+            echo '| Linux x64 | `.deb` + `.AppImage` |'
+            echo '| Windows x64 | `.msi` + `.exe` |'
+            echo
+            echo 'See CHANGELOG.md for the full project history.'
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -122,26 +165,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "NexTerm ${{ github.ref_name }}"
-          releaseBody: |
-            ## NexTerm ${{ github.ref_name }}
-
-            ### Descargas / Downloads
-            | Plataforma | Archivo |
-            |------------|---------|
-            | **macOS (Apple Silicon)** | `.dmg` |
-            | **macOS (Intel)** | `.dmg` |
-            | **Linux (x64)** | `.deb` + `.AppImage` |
-            | **Windows (x64)** | `.msi` + `.exe` |
-
-            ### Features
-            - 🖥️ Terminal SSH con xterm.js
-            - 📂 SFTP Browser con búsqueda y viewer inline
-            - 🔒 Vault encriptado (AES-256-GCM + Argon2id)
-            - 🚇 SSH Tunnels (local + remote)
-            - 🌐 Inglés y Español
-            - 📤 Export/Import de perfiles
+          tagName: ${{ steps.release_notes.outputs.tag_name }}
+          releaseName: "NexTerm ${{ steps.release_notes.outputs.tag_name }}"
+          releaseBody: ${{ steps.release_notes.outputs.body }}
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}
