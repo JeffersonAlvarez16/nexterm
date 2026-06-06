@@ -38,7 +38,7 @@ name: Release RemoteKit
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -104,11 +104,17 @@ jobs:
             libjavascriptcoregtk-4.1-dev
 
       - name: Install frontend dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
-      - name: Run tests
+      - name: Typecheck frontend
+        run: pnpm exec tsc --noEmit
+
+      - name: Run frontend tests
+        run: pnpm test
+
+      - name: Run Rust tests
         run: cd src-tauri && cargo test
-        
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -117,10 +123,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'RemoteKit ${{ github.ref_name }}'
+          releaseName: "RemoteKit ${{ github.ref_name }}"
           releaseBody: |
             ## RemoteKit ${{ github.ref_name }}
-            
+
             ### Descargas / Downloads
             | Plataforma | Archivo |
             |------------|---------|
@@ -128,7 +134,7 @@ jobs:
             | **macOS (Intel)** | `.dmg` |
             | **Linux (x64)** | `.deb` + `.AppImage` |
             | **Windows (x64)** | `.msi` + `.exe` |
-            
+
             ### Features
             - 🖥️ Terminal SSH con xterm.js
             - 📂 SFTP Browser con búsqueda y viewer inline

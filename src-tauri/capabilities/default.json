@@ -12,7 +12,6 @@
     "dialog:allow-ask",
     "fs:default",
     "fs:allow-temp-meta-recursive",
-    "shell:default",
     "updater:default",
     "process:allow-restart"
   ]

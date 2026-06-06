@@ -595,6 +595,20 @@ export function Sidebar({
 	const [importError, setImportError] = useState<string | null>(null);
 	const [importLoading, setImportLoading] = useState(false);
 
+	const closeExportDialog = useCallback(() => {
+		setExportDialog(false);
+		setExportIncludePasswords(false);
+		setExportPassword("");
+		setExportPasswordConfirm("");
+		setExportError(null);
+	}, []);
+
+	const closeImportPasswordDialog = useCallback(() => {
+		setImportPasswordDialog(null);
+		setImportPassword("");
+		setImportError(null);
+	}, []);
+
 	// DnD sensors
 	const sensors = useSensors(
 		useSensor(PointerSensor, {
@@ -663,7 +677,7 @@ export function Sidebar({
 				exportIncludePasswords,
 				exportIncludePasswords ? exportPassword : undefined,
 			);
-			setExportDialog(false);
+			closeExportDialog();
 			setBanner({
 				type: "success",
 				message: t("sidebar.exportSuccess", { count }),
@@ -678,6 +692,7 @@ export function Sidebar({
 		exportPassword,
 		exportPasswordConfirm,
 		exportProfiles,
+		closeExportDialog,
 		t,
 	]);
 
@@ -717,7 +732,7 @@ export function Sidebar({
 		setImportLoading(true);
 		try {
 			const result = await importProfiles(importPasswordDialog, importPassword);
-			setImportPasswordDialog(null);
+			closeImportPasswordDialog();
 			setBanner({
 				type: "success",
 				message: t("sidebar.importSuccess", {
@@ -735,7 +750,7 @@ export function Sidebar({
 		} finally {
 			setImportLoading(false);
 		}
-	}, [importPasswordDialog, importPassword, importProfiles, t]);
+	}, [importPasswordDialog, importPassword, importProfiles, closeImportPasswordDialog, t]);
 
 	// Auto-clear error after 5 seconds
 	useEffect(() => {
@@ -1443,7 +1458,7 @@ export function Sidebar({
 			{/* ── Export Dialog ── */}
 			<Dialog
 				open={exportDialog}
-				onClose={() => !exportLoading && setExportDialog(false)}
+				onClose={() => !exportLoading && closeExportDialog()}
 				title=""
 				width="420px"
 			>
@@ -1535,7 +1550,7 @@ export function Sidebar({
 				<div className="cd-actions">
 					<button
 						className="btn btn-ghost btn-md"
-						onClick={() => setExportDialog(false)}
+						onClick={closeExportDialog}
 						disabled={exportLoading}
 					>
 						{t("general.cancel")}
@@ -1553,7 +1568,7 @@ export function Sidebar({
 			{/* ── Import Password Dialog (encrypted .nexterm files) ── */}
 			<Dialog
 				open={importPasswordDialog !== null}
-				onClose={() => !importLoading && setImportPasswordDialog(null)}
+				onClose={() => !importLoading && closeImportPasswordDialog()}
 				title=""
 				width="420px"
 			>
@@ -1605,7 +1620,7 @@ export function Sidebar({
 				<div className="cd-actions">
 					<button
 						className="btn btn-ghost btn-md"
-						onClick={() => setImportPasswordDialog(null)}
+						onClick={closeImportPasswordDialog}
 						disabled={importLoading}
 					>
 						{t("general.cancel")}

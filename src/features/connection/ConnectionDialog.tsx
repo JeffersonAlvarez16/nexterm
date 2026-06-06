@@ -162,6 +162,13 @@ export function ConnectionDialog({
     }
   }, [open, editProfileId, profiles]);
 
+  function handleClose() {
+    setPasswords({});
+    setTestingUser(null);
+    setTestResults({});
+    onClose();
+  }
+
   // Pre-fetch available SSH keys independently of profile changes.
   // Separated to avoid re-running when `profiles` reference changes on save.
   useEffect(() => {
@@ -274,7 +281,7 @@ export function ConnectionDialog({
           await storeCredential(id, user.id, pw);
         }
       }
-      onClose();
+      handleClose();
     } catch {
       // Error handled by store
     } finally {
@@ -349,7 +356,7 @@ export function ConnectionDialog({
   return (
     <Dialog
       open={open}
-      onClose={onClose}
+      onClose={handleClose}
       title=""
       width="540px"
       aria-labelledby="connection-dialog-title"
@@ -746,7 +753,7 @@ export function ConnectionDialog({
 
       {/* ─── Footer Actions ─── */}
       <div className="cd-actions">
-        <Button variant="ghost" onClick={onClose}>
+        <Button variant="ghost" onClick={handleClose}>
           {t("connection.cancel")}
         </Button>
         <div className="cd-actions-right">

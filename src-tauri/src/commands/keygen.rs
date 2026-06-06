@@ -11,7 +11,7 @@
 // - Overwrite protection: both `filename` and `filename.pub` are checked for
 //   existence BEFORE writing. If either exists, an error is returned.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tokio::task;
 use zeroize::Zeroizing;
@@ -33,6 +33,38 @@ pub struct GenerateSshKeyResult {
     pub private_key_path: String,
     /// Absolute path to the public key file written to disk.
     pub public_key_path: String,
+}
+
+fn validate_ssh_key_filename(filename: &str) -> Result<&str, AppError> {
+    let name = filename.trim();
+    if name.is_empty() {
+        return Err(AppError::KeyError("Key filename is required".into()));
+    }
+    if name != filename {
+        return Err(AppError::KeyError(
+            "Key filename must not contain leading or trailing whitespace".into(),
+        ));
+    }
+    if name == "." || name == ".." {
+        return Err(AppError::KeyError(
+            "Key filename must be a bare filename, not a path".into(),
+        ));
+    }
+    let path = Path::new(name);
+    if path.is_absolute() || path.components().count() != 1 {
+        return Err(AppError::KeyError(
+            "Key filename must be a bare filename, not a path".into(),
+        ));
+    }
+    if !name
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
+    {
+        return Err(AppError::KeyError(
+            "Key filename may only contain letters, numbers, '.', '_' and '-'".into(),
+        ));
+    }
+    Ok(name)
 }
 
 // ─── Tauri Command ───────────────────────────────────────
@@ -60,8 +92,9 @@ pub async fn generate_ssh_key(
     let passphrase_z = passphrase.map(Zeroizing::new);
 
     // Resolve output paths
+    let filename = validate_ssh_key_filename(&filename)?;
     let ssh_dir = default_ssh_dir();
-    let priv_path = ssh_dir.join(&filename);
+    let priv_path = ssh_dir.join(filename);
     let pub_path = ssh_dir.join(format!("{filename}.pub"));
 
     // ── Security: refuse to overwrite existing keys ──────────────────────
@@ -146,6 +179,35 @@ mod tests {
     /// Helper: redirect `default_ssh_dir()` by temporarily manipulating state
     /// isn't possible without full Tauri context, so we test the sub-functions
     /// and path logic directly.
+
+    #[test]
+    fn validate_ssh_key_filename_allows_bare_safe_names() {
+        for name in ["id_ed25519", "id-rsa.backup", "work_key.2026"] {
+            assert_eq!(validate_ssh_key_filename(name).unwrap(), name);
+        }
+    }
+
+    #[test]
+    fn validate_ssh_key_filename_rejects_paths_and_unsafe_names() {
+        for name in [
+            "",
+            " id_ed25519",
+            "id_ed25519 ",
+            ".",
+            "..",
+            "../id_ed25519",
+            "nested/id_ed25519",
+            "/tmp/id_ed25519",
+            "id ed25519",
+            "id_ed25519;rm",
+            "id_ed25519.pub/key",
+        ] {
+            assert!(
+                validate_ssh_key_filename(name).is_err(),
+                "expected invalid key filename: {name:?}"
+            );
+        }
+    }
 
     #[test]
     fn write_public_key_creates_file_with_correct_perms() {
