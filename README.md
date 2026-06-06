@@ -111,13 +111,13 @@ Latest documented version: **v0.2.3**. See [CHANGELOG.md](CHANGELOG.md) for the 
 
 ### Platform support
 
-The release workflow is configured to build macOS Apple Silicon, macOS Intel, Linux x64 and Windows x64 artifacts. Artifact availability depends on the latest successful GitHub Actions release run.
+The release workflow is configured to build macOS Apple Silicon, macOS Intel, Linux x64 and Windows x64 artifacts. Updater artifacts are temporarily disabled until a valid Tauri updater signing key is configured.
 
 | Platform | Release target |
 |---|---|
 | macOS Apple Silicon | `.dmg` / app bundle |
 | macOS Intel | `.dmg` / app bundle |
-| Linux x64 | `.deb` + `.AppImage` |
+| Linux x64 | `.deb` + `.rpm` + `.AppImage` |
 | Windows x64 | `.msi` + `.exe` |
 
 ---
@@ -186,7 +186,7 @@ NexTerm handles credentials and remote access, so security is part of the produc
 - Unsafe SFTP names are rejected during recursive downloads.
 - Local file editing avoids arbitrary renderer-to-filesystem write IPC.
 - Local tunnel binds default to loopback.
-- Release builds use frozen dependency installs before signing and publishing.
+- Release builds use frozen dependency installs before publishing.
 
 Found a vulnerability? Report it privately through [GitHub Security Advisories](https://github.com/JeffersonAlvarez16/nexterm/security/advisories).
 
