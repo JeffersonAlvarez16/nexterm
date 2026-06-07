@@ -8,6 +8,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 - Disabled Tauri updater artifact generation until a valid updater signing key is configured, so release workflows can publish installers for every OS target instead of failing during updater signing.
+- Fixed Windows `fs_secure` Win32 API bindings for `windows` crate 0.61 so the Windows release job can compile.
 
 ## [0.2.3] - 2026-06-06
 

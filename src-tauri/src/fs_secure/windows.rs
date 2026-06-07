@@ -59,7 +59,7 @@ impl Drop for LocalAllocGuard {
     fn drop(&mut self) {
         if !self.0.is_null() {
             unsafe {
-                let _ = LocalFree(HLOCAL(self.0));
+                let _ = LocalFree(Some(HLOCAL(self.0)));
             }
         }
     }
@@ -126,11 +126,11 @@ pub(super) fn set_owner_only(path: &Path) -> io::Result<()> {
 
     // 6. Initialize the empty ACL and add a single allow-all ACE for the user.
     unsafe {
-        InitializeAcl(acl_ptr, acl_size, ACL_REVISION.0)
+        InitializeAcl(acl_ptr, acl_size, ACL_REVISION)
             .map_err(|e| io::Error::other(format!("InitializeAcl: {e}")))?;
         AddAccessAllowedAceEx(
             acl_ptr,
-            ACL_REVISION.0,
+            ACL_REVISION,
             windows::Win32::Security::ACE_FLAGS(NO_INHERITANCE),
             GENERIC_ALL,
             user_sid,
