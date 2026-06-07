@@ -316,8 +316,9 @@ mod tests {
 
         let auto_lock = AutoLockState::default();
         auto_lock.set_idle_timeout_secs(900);
-        // Place activity deep in the lock-eligible past.
-        let now = Instant::now();
+        // Place activity deep in the lock-eligible past. Use a future anchor so
+        // Windows' monotonic `Instant` does not underflow during tests.
+        let now = Instant::now() + Duration::from_secs(1_000);
         auto_lock.record_activity_at(now - Duration::from_secs(901));
         assert!(
             auto_lock.should_lock_now(now),
@@ -351,7 +352,8 @@ mod tests {
 
         let auto_lock = AutoLockState::default();
         auto_lock.set_idle_timeout_secs(900);
-        let stale = Instant::now() - Duration::from_secs(901);
+        let now = Instant::now() + Duration::from_secs(1_000);
+        let stale = now - Duration::from_secs(901);
         auto_lock.record_activity_at(stale);
 
         let found =
@@ -360,7 +362,6 @@ mod tests {
 
         assert!(found.is_none(), "no credential stored — expected a miss");
         // The timer was NOT reset: still lock-eligible against the same `now`.
-        let now = Instant::now();
         assert!(
             auto_lock.should_lock_now(now),
             "a vault miss must not reset last_activity"
@@ -380,7 +381,7 @@ mod tests {
 
         let auto_lock = AutoLockState::default();
         auto_lock.set_idle_timeout_secs(900);
-        let now = Instant::now();
+        let now = Instant::now() + Duration::from_secs(1_000);
         auto_lock.record_activity_at(now - Duration::from_secs(901));
 
         let found =

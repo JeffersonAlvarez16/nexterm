@@ -109,14 +109,21 @@ impl AutoLockState {
         self.idle_elapsed_since(Instant::now()).as_secs()
     }
 
-    /// Seconds remaining before auto-lock, or `None` when auto-lock is disabled
-    /// (`timeout == 0`). Clamps to `0` once the timeout has elapsed.
-    pub fn seconds_until_lock(&self) -> Option<u64> {
+    /// Seconds remaining before auto-lock as of `now`, or `None` when
+    /// auto-lock is disabled (`timeout == 0`). Clamps to `0` once the timeout
+    /// has elapsed.
+    pub fn seconds_until_lock_at(&self, now: Instant) -> Option<u64> {
         let timeout = self.idle_timeout_secs();
         if timeout == 0 {
             return None;
         }
-        Some(timeout.saturating_sub(self.idle_seconds()))
+        Some(timeout.saturating_sub(self.idle_elapsed_since(now).as_secs()))
+    }
+
+    /// Seconds remaining before auto-lock, or `None` when auto-lock is disabled
+    /// (`timeout == 0`). Clamps to `0` once the timeout has elapsed.
+    pub fn seconds_until_lock(&self) -> Option<u64> {
+        self.seconds_until_lock_at(Instant::now())
     }
 
     /// Decide whether the vault should auto-lock as of `now`, composing the
@@ -606,7 +613,7 @@ mod tests {
         let s = AutoLockState::default();
         s.set_idle_timeout_secs(900);
         // Activity 901s in the past relative to a fixed `now` => should lock.
-        let now = Instant::now();
+        let now = Instant::now() + Duration::from_secs(1_000);
         s.record_activity_at(now - Duration::from_secs(901));
         assert!(s.should_lock_now(now));
     }
@@ -615,7 +622,7 @@ mod tests {
     fn should_not_lock_before_timeout() {
         let s = AutoLockState::default();
         s.set_idle_timeout_secs(900);
-        let now = Instant::now();
+        let now = Instant::now() + Duration::from_secs(1_000);
         s.record_activity_at(now - Duration::from_secs(10));
         assert!(!s.should_lock_now(now));
     }
@@ -624,17 +631,17 @@ mod tests {
     fn timeout_zero_never_locks_even_after_long_idle() {
         let s = AutoLockState::default();
         s.set_idle_timeout_secs(0);
-        let now = Instant::now();
+        let now = Instant::now() + Duration::from_secs(90_000);
         s.record_activity_at(now - Duration::from_secs(86_400));
         assert!(!s.should_lock_now(now));
-        assert_eq!(s.seconds_until_lock(), None);
+        assert_eq!(s.seconds_until_lock_at(now), None);
     }
 
     #[test]
     fn record_activity_resets_the_idle_timer() {
         let s = AutoLockState::default();
         s.set_idle_timeout_secs(900);
-        let now = Instant::now();
+        let now = Instant::now() + Duration::from_secs(1_000);
         // First put activity in the lock-eligible past...
         s.record_activity_at(now - Duration::from_secs(901));
         assert!(s.should_lock_now(now));
@@ -647,8 +654,9 @@ mod tests {
     fn seconds_until_lock_clamps_to_zero_when_expired() {
         let s = AutoLockState::default();
         s.set_idle_timeout_secs(900);
-        s.record_activity_at(Instant::now() - Duration::from_secs(5000));
-        assert_eq!(s.seconds_until_lock(), Some(0));
+        let now = Instant::now() + Duration::from_secs(5_100);
+        s.record_activity_at(now - Duration::from_secs(5000));
+        assert_eq!(s.seconds_until_lock_at(now), Some(0));
     }
 
     // ─── Keyboard-Interactive serde ─────────────────────────────────
