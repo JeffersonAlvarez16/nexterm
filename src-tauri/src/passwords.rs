@@ -220,7 +220,10 @@ pub fn verify_reauth_candidate(
     password: &str,
 ) -> Result<bool, AppError> {
     let candidate = crypto::derive_key(password, &snapshot.salt, &snapshot.kdf_params)?;
-    Ok(crypto::ct_eq(candidate.as_slice(), snapshot.current_key.as_slice()))
+    Ok(crypto::ct_eq(
+        candidate.as_slice(),
+        snapshot.current_key.as_slice(),
+    ))
 }
 
 impl PasswordStore {
@@ -501,7 +504,8 @@ impl PasswordStore {
 
         // Preserve the existing secret blob byte-for-byte.
         let secret = existing.secret.clone();
-        self.entries.insert(id.to_string(), StoreEntry { meta, secret });
+        self.entries
+            .insert(id.to_string(), StoreEntry { meta, secret });
         self.save_to_disk()
     }
 
@@ -553,7 +557,8 @@ impl PasswordStore {
         );
         let secret = crypto::encrypt_bytes(key, &secret_json)?;
 
-        self.entries.insert(id.to_string(), StoreEntry { meta, secret });
+        self.entries
+            .insert(id.to_string(), StoreEntry { meta, secret });
         self.save_to_disk()
     }
 
@@ -1128,8 +1133,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(meta.title, "t");
-        let secret: SecretInput =
-            serde_json::from_str(r#"{"password":"p","notes":"n"}"#).unwrap();
+        let secret: SecretInput = serde_json::from_str(r#"{"password":"p","notes":"n"}"#).unwrap();
         assert_eq!(secret.password, "p");
         assert_eq!(secret.notes, "n");
     }

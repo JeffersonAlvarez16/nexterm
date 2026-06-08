@@ -115,9 +115,12 @@ pub async fn pw_create(
     // Argon2id derivation happens inside `create`. Run it on a blocking thread
     // so the expensive (memory-hard) KDF never holds the async `passwords`
     // mutex — otherwise all pw_* commands serialize behind it (local DoS).
-    let store = tokio::task::spawn_blocking(move || PasswordStore::create(&data_dir, &master_password))
-        .await
-        .map_err(|e| AppError::VaultError(format!("Password store creation task failed: {e}")))??;
+    let store =
+        tokio::task::spawn_blocking(move || PasswordStore::create(&data_dir, &master_password))
+            .await
+            .map_err(|e| {
+                AppError::VaultError(format!("Password store creation task failed: {e}"))
+            })??;
 
     // Only NOW take the lock — a trivial slot write, no derivation under it.
     let mut guard = state.passwords.lock().await;
@@ -140,9 +143,12 @@ pub async fn pw_unlock(
     // `unlock` reads the file and runs Argon2id internally. Do both on a
     // blocking thread so the memory-hard KDF never holds the async `passwords`
     // mutex (local DoS prevention).
-    let store = tokio::task::spawn_blocking(move || PasswordStore::unlock(&data_dir, &master_password))
-        .await
-        .map_err(|e| AppError::VaultError(format!("Password store unlock task failed: {e}")))??;
+    let store =
+        tokio::task::spawn_blocking(move || PasswordStore::unlock(&data_dir, &master_password))
+            .await
+            .map_err(|e| {
+                AppError::VaultError(format!("Password store unlock task failed: {e}"))
+            })??;
 
     let mut guard = state.passwords.lock().await;
     *guard = Some(store);
@@ -182,9 +188,8 @@ pub async fn pw_reset(app: tauri::AppHandle, state: State<'_, AppState>) -> Resu
     //    NEVER touch vault.json — the SSH vault is fully independent.
     let pw_path = data_dir.join("passwords.json");
     if pw_path.exists() {
-        std::fs::remove_file(&pw_path).map_err(|e| {
-            AppError::VaultError(format!("Failed to delete passwords file: {e}"))
-        })?;
+        std::fs::remove_file(&pw_path)
+            .map_err(|e| AppError::VaultError(format!("Failed to delete passwords file: {e}")))?;
     }
     let tmp_path = pw_path.with_extension("json.tmp");
     if tmp_path.exists() {
@@ -396,11 +401,10 @@ pub async fn pw_reauth(
     };
 
     // Expensive derive + constant-time compare OFF the async lock.
-    let ok = tokio::task::spawn_blocking(move || {
-        verify_reauth_candidate(&snapshot, &master_password)
-    })
-    .await
-    .map_err(|e| AppError::VaultError(format!("Re-auth task failed: {e}")))??;
+    let ok =
+        tokio::task::spawn_blocking(move || verify_reauth_candidate(&snapshot, &master_password))
+            .await
+            .map_err(|e| AppError::VaultError(format!("Re-auth task failed: {e}")))??;
 
     if !ok {
         return Err(AppError::VaultWrongPassword);

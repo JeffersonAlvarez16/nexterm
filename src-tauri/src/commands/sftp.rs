@@ -1275,5 +1275,4 @@ mod tests {
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("Not connected"), "Unexpected error: {msg}");
     }
-
 }

@@ -212,9 +212,7 @@ pub fn run() {
                     window.on_window_event(move |event| {
                         if let tauri::WindowEvent::Focused(false) = event {
                             *grant.lock().unwrap() = None;
-                            tracing::info!(
-                                "Window lost focus — cleared password reveal grant"
-                            );
+                            tracing::info!("Window lost focus — cleared password reveal grant");
                             // Best-effort UI notification; ignore emit errors
                             // (e.g. during teardown) since the grant is already
                             // cleared, which is the security-critical part.

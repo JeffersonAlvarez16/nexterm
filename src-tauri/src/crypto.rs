@@ -142,7 +142,10 @@ pub(crate) fn decrypt_raw(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>, AppErr
 // Consumed by the password store in step 2; the vault keeps its own inline
 // verifier path for now. `allow(dead_code)` keeps the step-1 build warning-free.
 #[allow(dead_code)]
-pub(crate) fn encrypt_verifier(key: &[u8; 32], verifier_plaintext: &[u8]) -> Result<Vec<u8>, AppError> {
+pub(crate) fn encrypt_verifier(
+    key: &[u8; 32],
+    verifier_plaintext: &[u8],
+) -> Result<Vec<u8>, AppError> {
     encrypt_bytes(key, verifier_plaintext)
 }
 

@@ -62,7 +62,7 @@ impl LockedKey {
     /// and swallowed (the value is still usable and still zero-on-drop).
     pub fn new(bytes: [u8; KEY_LEN]) -> Self {
         let key = Box::new(bytes);
-        let ptr = key.as_ptr() as *const u8;
+        let ptr = key.as_ptr();
         let locked = lock_memory(ptr, KEY_LEN);
         if !locked {
             tracing::warn!(
@@ -97,7 +97,7 @@ impl Drop for LockedKey {
         self.key.zeroize();
         // Only release a lock we actually took.
         if self.locked {
-            let ptr = self.key.as_ptr() as *const u8;
+            let ptr = self.key.as_ptr();
             unlock_memory(ptr, KEY_LEN);
         }
     }
