@@ -43,6 +43,57 @@ const REVEAL_VISIBLE_MS = 15_000;
 /** A queued action that needs a grant before it can run. */
 type PendingAction = { kind: "reveal" | "copy"; id: string } | null;
 
+// ── Compact row-action icons (15px, stroke, currentColor) ──────────────────────
+const iconProps = {
+  viewBox: "0 0 16 16",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.4,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+  "aria-hidden": true,
+};
+const EyeIcon = () => (
+  <svg {...iconProps}>
+    <path d="M1.5 8S3.8 3.6 8 3.6 14.5 8 14.5 8 12.2 12.4 8 12.4 1.5 8 1.5 8Z" />
+    <circle cx="8" cy="8" r="2" />
+  </svg>
+);
+const EyeOffIcon = () => (
+  <svg {...iconProps}>
+    <path d="M6.4 3.8A6.7 6.7 0 0 1 8 3.6c4.2 0 6.5 4.4 6.5 4.4a11 11 0 0 1-1.7 2.2M3.9 4.7A10.8 10.8 0 0 0 1.5 8S3.8 12.4 8 12.4a6.5 6.5 0 0 0 2.6-.5" />
+    <path d="M6.6 6.6a2 2 0 0 0 2.8 2.8" />
+    <path d="M2 2l12 12" />
+  </svg>
+);
+const CopyIcon = () => (
+  <svg {...iconProps}>
+    <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
+    <path d="M3.4 10.5A1.5 1.5 0 0 1 2.5 9V4a1.5 1.5 0 0 1 1.5-1.5H9a1.5 1.5 0 0 1 1.4 1" />
+  </svg>
+);
+const EditIcon = () => (
+  <svg {...iconProps}>
+    <path d="M11.6 2.4a1.4 1.4 0 0 1 2 2L5.2 12.8l-3 .8.8-3 8.6-8.2Z" />
+  </svg>
+);
+const KeyIcon = () => (
+  <svg {...iconProps}>
+    <circle cx="5.5" cy="10.5" r="2.5" />
+    <path d="M7.3 8.7 13 3M10.8 5.2 12.4 6.8M9.3 6.7 10.6 8" />
+  </svg>
+);
+const TrashIcon = () => (
+  <svg {...iconProps}>
+    <path d="M2.5 4.5h11M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M4.1 4.5l.5 8a1 1 0 0 0 1 .95h4.8a1 1 0 0 0 1-.95l.5-8" />
+  </svg>
+);
+const CheckIcon = () => (
+  <svg {...iconProps} strokeWidth={1.7}>
+    <path d="M3 8.4 6.4 12 13 4.6" />
+  </svg>
+);
+
 export function PasswordList({ onEdit, onSetPassword }: PasswordListProps) {
   const { t } = useI18n();
   const entries = usePasswordStore((s) => s.entries);
@@ -259,82 +310,105 @@ export function PasswordList({ onEdit, onSetPassword }: PasswordListProps) {
           const isRevealed = revealedId === entry.id;
           return (
             <li key={entry.id} className="pw-entry">
-              <div className="pw-entry-info">
-                <span className="pw-entry-title">{entry.title}</span>
-                {entry.username && (
-                  <span className="pw-entry-username">{entry.username}</span>
-                )}
-                {entry.url && <span className="pw-entry-url">{entry.url}</span>}
-                {entry.category && (
-                  <span className="pw-entry-category">{entry.category}</span>
-                )}
-                <span className="pw-entry-secret" aria-live="polite">
-                  {isRevealed ? (
-                    <code className="pw-entry-secret-value">{revealedValue}</code>
-                  ) : (
-                    <span className="pw-entry-secret-mask" aria-hidden="true">
-                      ••••••••••••
+              <div className="pw-entry-head">
+                <div className="pw-entry-ident">
+                  <span className="pw-entry-title">{entry.title}</span>
+                  {(entry.username || entry.url) && (
+                    <span className="pw-entry-sub">
+                      {entry.username && (
+                        <span className="pw-entry-username">{entry.username}</span>
+                      )}
+                      {entry.username && entry.url && (
+                        <span className="pw-entry-sep" aria-hidden="true">
+                          ·
+                        </span>
+                      )}
+                      {entry.url && <span className="pw-entry-url">{entry.url}</span>}
                     </span>
                   )}
-                </span>
+                </div>
+
+                <div className="pw-entry-row-actions">
+                  <button
+                    type="button"
+                    className="pw-icon-btn"
+                    aria-label={isRevealed ? t("passwords.hide") : t("passwords.reveal")}
+                    title={isRevealed ? t("passwords.hide") : t("passwords.reveal")}
+                    aria-pressed={isRevealed}
+                    onClick={() =>
+                      isRevealed ? clearReveal() : requestAction("reveal", entry.id)
+                    }
+                  >
+                    {isRevealed ? <EyeOffIcon /> : <EyeIcon />}
+                  </button>
+                  <button
+                    type="button"
+                    className="pw-icon-btn"
+                    aria-label={t("passwords.copy")}
+                    title={t("passwords.copy")}
+                    onClick={() => requestAction("copy", entry.id)}
+                  >
+                    <CopyIcon />
+                  </button>
+                  <button
+                    type="button"
+                    className="pw-icon-btn"
+                    aria-label={t("passwords.edit")}
+                    title={t("passwords.edit")}
+                    onClick={() => {
+                      clearReveal();
+                      onEdit(entry);
+                    }}
+                  >
+                    <EditIcon />
+                  </button>
+                  <button
+                    type="button"
+                    className="pw-icon-btn"
+                    aria-label={t("passwords.setPassword")}
+                    title={t("passwords.setPassword")}
+                    onClick={() => {
+                      clearReveal();
+                      onSetPassword(entry);
+                    }}
+                  >
+                    <KeyIcon />
+                  </button>
+                  {confirmDeleteId === entry.id ? (
+                    <button
+                      type="button"
+                      className="pw-icon-btn pw-icon-btn-danger"
+                      aria-label={t("passwords.deleteConfirm")}
+                      title={t("passwords.deleteConfirm")}
+                      onClick={() => void handleDelete(entry.id)}
+                    >
+                      <CheckIcon />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="pw-icon-btn"
+                      aria-label={t("passwords.delete")}
+                      title={t("passwords.delete")}
+                      onClick={() => setConfirmDeleteId(entry.id)}
+                    >
+                      <TrashIcon />
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="pw-entry-actions">
-                <button
-                  type="button"
-                  aria-label={isRevealed ? t("passwords.hide") : t("passwords.reveal")}
-                  aria-pressed={isRevealed}
-                  onClick={() =>
-                    isRevealed ? clearReveal() : requestAction("reveal", entry.id)
-                  }
-                >
-                  {isRevealed ? t("passwords.hide") : t("passwords.reveal")}
-                </button>
-                <button
-                  type="button"
-                  aria-label={t("passwords.copy")}
-                  onClick={() => requestAction("copy", entry.id)}
-                >
-                  {t("passwords.copy")}
-                </button>
-                <button
-                  type="button"
-                  aria-label={t("passwords.edit")}
-                  onClick={() => {
-                    clearReveal();
-                    onEdit(entry);
-                  }}
-                >
-                  {t("passwords.edit")}
-                </button>
-                <button
-                  type="button"
-                  aria-label={t("passwords.setPassword")}
-                  title={t("passwords.setPassword")}
-                  onClick={() => {
-                    clearReveal();
-                    onSetPassword(entry);
-                  }}
-                >
-                  {t("passwords.setPassword")}
-                </button>
-                {confirmDeleteId === entry.id ? (
-                  <button
-                    type="button"
-                    className="pw-entry-delete-confirm"
-                    aria-label={t("passwords.deleteConfirm")}
-                    onClick={() => void handleDelete(entry.id)}
-                  >
-                    {t("passwords.deleteConfirm")}
-                  </button>
+              {entry.category && (
+                <span className="pw-entry-category">{entry.category}</span>
+              )}
+
+              <div className="pw-entry-secret" aria-live="polite">
+                {isRevealed ? (
+                  <code className="pw-entry-secret-value">{revealedValue}</code>
                 ) : (
-                  <button
-                    type="button"
-                    aria-label={t("passwords.delete")}
-                    onClick={() => setConfirmDeleteId(entry.id)}
-                  >
-                    {t("passwords.delete")}
-                  </button>
+                  <span className="pw-entry-secret-mask" aria-hidden="true">
+                    ••••••••••••
+                  </span>
                 )}
               </div>
             </li>
