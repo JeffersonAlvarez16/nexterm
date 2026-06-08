@@ -114,3 +114,30 @@ describe("PasswordEntryDialog — add mode", () => {
     );
   });
 });
+
+describe("PasswordEntryDialog — generator options", () => {
+  it("calls generate() with the user-chosen length and charset toggles", async () => {
+    render(<PasswordEntryDialog open entry={null} onClose={() => {}} />);
+
+    // Open the generator options popover.
+    fireEvent.click(screen.getByLabelText("passwords.generator.open"));
+
+    // Change length 20 -> 32 and disable symbols, keep digits + uppercase on.
+    const length = document.getElementById("pw-gen-length") as HTMLInputElement;
+    fireEvent.change(length, { target: { value: "32" } });
+    fireEvent.click(document.getElementById("pw-gen-symbols")!);
+
+    // Trigger generation with the chosen options.
+    fireEvent.click(screen.getByText("passwords.generator.generate"));
+
+    await vi.waitFor(() => expect(generate).toHaveBeenCalledTimes(1));
+    // generate(length, symbols, digits, uppercase) with the chosen args.
+    expect(generate).toHaveBeenCalledWith(32, false, true, true);
+
+    // The generated value lands in the form's password field (local state only).
+    await vi.waitFor(() => {
+      const pw = document.getElementById("pw-entry-password") as HTMLInputElement;
+      expect(pw.value).toBe("generated-pass");
+    });
+  });
+});

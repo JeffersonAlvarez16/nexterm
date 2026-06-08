@@ -26,6 +26,16 @@ vi.mock("../../lib/clipboard", () => ({
   copySecret: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Capture the registered "pw-focus-lost" handler so the test can fire it.
+const focusLostHandlers: Array<(e: unknown) => void> = [];
+const unlistenSpy = vi.fn();
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn((event: string, handler: (e: unknown) => void) => {
+    if (event === "pw-focus-lost") focusLostHandlers.push(handler);
+    return Promise.resolve(unlistenSpy);
+  }),
+}));
+
 import { PasswordList } from "./PasswordList";
 import {
   usePasswordStore,
@@ -48,6 +58,7 @@ const remove = vi.fn().mockResolvedValue(undefined);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  focusLostHandlers.length = 0;
   usePasswordStore.setState({
     entries: [META],
     loading: false,
@@ -84,5 +95,30 @@ describe("PasswordList — single-use, id-bound reveal", () => {
     fireEvent.click(screen.getByRole("button", { name: "passwords.setPassword" }));
 
     expect(onSetPassword).toHaveBeenCalledWith(META);
+  });
+});
+
+describe("PasswordList — lock-on-blur hides revealed secrets", () => {
+  it("clears a revealed secret when the 'pw-focus-lost' event fires", async () => {
+    render(<PasswordList onEdit={() => {}} onSetPassword={() => {}} />);
+
+    // Reveal a row: open re-auth, enter master, confirm.
+    fireEvent.click(screen.getByRole("button", { name: "passwords.reveal" }));
+    const masterInput = document.getElementById("pw-reauth-password") as HTMLInputElement;
+    fireEvent.change(masterInput, { target: { value: "master-pw" } });
+    fireEvent.click(screen.getByText("passwords.reauth.confirm"));
+
+    // The plaintext is now visible on screen.
+    await vi.waitFor(() => expect(screen.getByText("the-plaintext")).toBeInTheDocument());
+
+    // The frontend registered a "pw-focus-lost" listener.
+    expect(focusLostHandlers.length).toBeGreaterThan(0);
+
+    // Window blur (focus lost) fires the backend event -> secret must vanish.
+    focusLostHandlers.forEach((h) => h({ event: "pw-focus-lost", payload: null }));
+
+    await vi.waitFor(() =>
+      expect(screen.queryByText("the-plaintext")).not.toBeInTheDocument(),
+    );
   });
 });

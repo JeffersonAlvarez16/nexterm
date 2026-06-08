@@ -719,6 +719,7 @@ body {
    ═══════════════════════════════════════════════════ */
 
 .app-layout {
+	position: relative;
 	display: grid;
 	grid-template-columns: var(--sidebar-width) 1fr;
 	grid-template-rows: 1fr var(--statusbar-height);
@@ -729,6 +730,45 @@ body {
 
 .app-layout-sidebar-collapsed {
 	grid-template-columns: var(--sidebar-collapsed-width) 1fr;
+}
+
+/* Draggable handle on the right edge of the left sidebar (mirrors the
+   side-panel resizer). Absolutely positioned at the sidebar/content border;
+   its `left` is driven inline from the persisted sidebar width. */
+.sidebar-resize-handle {
+	position: absolute;
+	top: 0;
+	bottom: var(--statusbar-height);
+	width: 8px;
+	transform: translateX(-4px);
+	cursor: col-resize;
+	z-index: 20;
+	background: transparent;
+	touch-action: none;
+}
+
+.sidebar-resize-handle::after {
+	content: "";
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 50%;
+	width: 2px;
+	transform: translateX(-50%);
+	background-color: var(--accent);
+	opacity: 0;
+	transition: opacity var(--transition-fast);
+}
+
+.sidebar-resize-handle:hover::after,
+.sidebar-resize-handle:focus-visible::after,
+.sidebar-resize-handle-active::after {
+	opacity: 0.6;
+}
+
+.sidebar-resize-handle:focus-visible {
+	outline: 2px solid var(--focus-ring);
+	outline-offset: -2px;
 }
 
 .app-content {
@@ -7513,6 +7553,64 @@ dialog::backdrop {
 .pw-entry-password-row > :first-child {
 	flex: 1;
 	min-width: 0;
+}
+
+/* ── Generator options (shared by add + set-password dialogs) ── */
+.pw-generator {
+	position: relative;
+	display: flex;
+}
+
+.pw-generator-popover {
+	position: absolute;
+	top: calc(100% + 6px);
+	right: 0;
+	z-index: 20;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	width: 240px;
+	padding: 12px;
+	border: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+	border-radius: 8px;
+	background: var(--surface, #fff);
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.pw-generator-row {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.pw-generator-length {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.pw-generator-length > input[type="range"] {
+	flex: 1;
+	min-width: 0;
+}
+
+.pw-generator-length-input {
+	width: 64px;
+	flex: 0 0 auto;
+}
+
+.pw-generator-toggle {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	cursor: pointer;
+	user-select: none;
+}
+
+.pw-generator-note {
+	margin: 0;
+	font-size: 12px;
+	opacity: 0.7;
 }
 
 .pw-entry-notes {

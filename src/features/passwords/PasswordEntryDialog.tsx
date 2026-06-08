@@ -21,6 +21,10 @@ import { Button } from "../../components/ui/Button";
 import { Spinner } from "../../components/ui/Spinner";
 import { useI18n } from "../../lib/i18n";
 import {
+  PasswordGenerator,
+  type GeneratorOptions,
+} from "./PasswordGenerator";
+import {
   usePasswordStore,
   type PasswordEntryInput,
   type PasswordEntryMeta,
@@ -32,9 +36,6 @@ interface PasswordEntryDialogProps {
   entry: PasswordEntryMeta | null;
   onClose: () => void;
 }
-
-/** Default generator settings. */
-const DEFAULT_GEN_LENGTH = 20;
 
 function emptyForm(): PasswordEntryInput {
   return { title: "", username: "", url: "", category: "", notes: "", password: "" };
@@ -76,18 +77,26 @@ export function PasswordEntryDialog({ open, entry, onClose }: PasswordEntryDialo
     onClose();
   }, [onClose]);
 
-  const handleGenerate = useCallback(async () => {
-    setGenerating(true);
-    setError(null);
-    try {
-      const generated = await generate(DEFAULT_GEN_LENGTH, true, true, true);
-      setForm((f) => ({ ...f, password: generated }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setGenerating(false);
-    }
-  }, [generate]);
+  const handleGenerate = useCallback(
+    async (options: GeneratorOptions) => {
+      setGenerating(true);
+      setError(null);
+      try {
+        const generated = await generate(
+          options.length,
+          options.symbols,
+          options.digits,
+          options.uppercase,
+        );
+        setForm((f) => ({ ...f, password: generated }));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setGenerating(false);
+      }
+    },
+    [generate],
+  );
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -190,15 +199,10 @@ export function PasswordEntryDialog({ open, entry, onClose }: PasswordEntryDialo
                 revealLabel={t("passwords.reveal")}
                 hideLabel={t("passwords.hide")}
               />
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => void handleGenerate()}
-                disabled={generating}
-              >
-                {generating ? <Spinner size={14} /> : t("passwords.entry.generate")}
-              </Button>
+              <PasswordGenerator
+                onGenerate={(options) => void handleGenerate(options)}
+                busy={generating}
+              />
             </div>
 
             <div className="pw-entry-notes">

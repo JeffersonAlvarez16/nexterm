@@ -18,6 +18,7 @@
 // edit/delete, and on unmount. Nothing secret is ever pushed into the store.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { Dialog } from "../../components/ui/Dialog";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
@@ -88,6 +89,36 @@ export function PasswordList({ onEdit, onSetPassword }: PasswordListProps) {
     clearReveal();
     // Intentionally keyed on entries identity.
   }, [entries, clearReveal]);
+
+  // ── Lock-on-blur ──────────────────────────────────────────────────────────────
+  // The backend emits "pw-focus-lost" on window blur (and clears its reveal grant
+  // server-side). On that event — or a raw window blur as a fallback — immediately
+  // HIDE any revealed secret, cancel the auto-hide timer, and tear down any
+  // in-progress re-auth dialog. This shrinks the shoulder-surfing window when the
+  // user alt-tabs away. The 15s auto-hide and wipe-on-unmount/lock stay intact.
+  useEffect(() => {
+    const panicHide = () => {
+      // Drop any revealed plaintext and cancel its pending auto-hide timer.
+      clearReveal();
+      // Reset any in-progress reveal/re-auth dialog and wipe the typed master.
+      pendingAction.current = null;
+      setReauthOpen(false);
+      setReauthPassword("");
+      setReauthError(null);
+    };
+
+    let unlisten: (() => void) | undefined;
+    void listen("pw-focus-lost", panicHide).then((fn) => {
+      unlisten = fn;
+    });
+    // Raw window blur as a defense-in-depth fallback (e.g. event not wired).
+    window.addEventListener("blur", panicHide);
+
+    return () => {
+      unlisten?.();
+      window.removeEventListener("blur", panicHide);
+    };
+  }, [clearReveal]);
 
   // ── Actions ────────────────────────────────────────────────────────────────
   const doReveal = useCallback(
