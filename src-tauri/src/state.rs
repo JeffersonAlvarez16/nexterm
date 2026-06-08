@@ -12,9 +12,16 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+use crate::passwords::PasswordStore;
 use crate::profile::ConnectionProfile;
 use crate::ssh::tunnel::RemoteForwardRegistry;
 use crate::vault::{idle_should_lock, Vault, DEFAULT_IDLE_TIMEOUT_SECS};
+
+/// Default idle timeout before the INDEPENDENT password store auto-locks: 5
+/// minutes. Deliberately shorter than the SSH vault's 15-minute default and
+/// tracked by its own [`AutoLockState`] so SSH activity never extends the
+/// password store's unlocked window.
+pub const PW_DEFAULT_IDLE_TIMEOUT_SECS: u64 = 300;
 
 // ─── Type Aliases ───────────────────────────────────────
 
@@ -36,6 +43,33 @@ pub struct AppState {
     /// `vault_status` reads never have to take the async `vault` mutex just to
     /// inspect activity — this keeps lock ordering simple and deadlock-free.
     pub auto_lock: Arc<AutoLockState>,
+
+    // ─── Independent password store (second vault) ──────
+    //
+    // Fully separate from the SSH vault above: its own encrypted file, its own
+    // derived key, its own in-memory slot, and its own auto-lock timer. SSH
+    // activity must NEVER keep this store unlocked, hence the independent
+    // `passwords_auto_lock` instance with a 5-minute default.
+    /// In-memory slot for the password store. `Arc<Mutex<..>>` mirrors `vault`
+    /// (same tokio `Mutex`) so a future background lock task can share the slot.
+    pub passwords: Arc<Mutex<Option<PasswordStore>>>,
+    /// Idle/suspend auto-lock bookkeeping for the password store, independent of
+    /// the SSH vault's `auto_lock`. Defaults to 300s (5 min).
+    pub passwords_auto_lock: Arc<AutoLockState>,
+    /// Fresh re-auth grant for the dangerous reveal path. Holds
+    /// `Some((entry_id, issued_at))` for a grant that is BOTH single-use and
+    /// id-bound:
+    /// - `entry_id` binds the grant to one specific entry. `pw_reveal` accepts
+    ///   ONLY that exact id (else [`crate::error::AppError::RevealNotAuthorized`]),
+    ///   so a grant minted for entry A can never reveal entry B.
+    /// - `issued_at` is the `Instant` the grant was minted; the reveal command
+    ///   enforces the short TTL against it.
+    ///
+    /// `pw_reveal` sets this back to `None` immediately after a successful
+    /// reveal, so the grant is SINGLE-USE: every reveal requires a fresh
+    /// `pw_reauth`. `None` means no active grant. Guarded by a synchronous mutex
+    /// because every access is a trivial read/write with no `.await`.
+    pub pw_reveal_grant: Arc<StdMutex<Option<(String, Instant)>>>,
 }
 
 impl Default for AppState {
@@ -45,6 +79,11 @@ impl Default for AppState {
             profiles: Mutex::new(Vec::new()),
             vault: Arc::new(Mutex::new(None)),
             auto_lock: Arc::new(AutoLockState::default()),
+            passwords: Arc::new(Mutex::new(None)),
+            passwords_auto_lock: Arc::new(AutoLockState::with_idle_timeout(
+                PW_DEFAULT_IDLE_TIMEOUT_SECS,
+            )),
+            pw_reveal_grant: Arc::new(StdMutex::new(None)),
         }
     }
 }
@@ -66,14 +105,23 @@ pub struct AutoLockState {
 
 impl Default for AutoLockState {
     fn default() -> Self {
-        Self {
-            last_activity: StdMutex::new(Instant::now()),
-            idle_timeout_secs: AtomicU64::new(DEFAULT_IDLE_TIMEOUT_SECS),
-        }
+        Self::with_idle_timeout(DEFAULT_IDLE_TIMEOUT_SECS)
     }
 }
 
 impl AutoLockState {
+    /// Construct an `AutoLockState` with a caller-chosen initial idle timeout
+    /// (seconds; `0` disables auto-lock). The SSH vault uses the 15-minute
+    /// default via [`Default`]; the independent password store constructs its
+    /// own instance with a 5-minute (300s) default so SSH activity can never
+    /// keep the password store unlocked.
+    pub fn with_idle_timeout(secs: u64) -> Self {
+        Self {
+            last_activity: StdMutex::new(Instant::now()),
+            idle_timeout_secs: AtomicU64::new(secs),
+        }
+    }
+
     /// Reset the idle timer — call this on every vault operation that counts as
     /// "use" (unlock, store/get/delete credential, status that implies use).
     pub fn record_activity(&self) {
@@ -597,6 +645,33 @@ mod tests {
         let s = AutoLockState::default();
         assert_eq!(s.idle_timeout_secs(), DEFAULT_IDLE_TIMEOUT_SECS);
         assert_eq!(DEFAULT_IDLE_TIMEOUT_SECS, 900);
+    }
+
+    #[test]
+    fn with_idle_timeout_sets_initial_timeout() {
+        let s = AutoLockState::with_idle_timeout(300);
+        assert_eq!(s.idle_timeout_secs(), 300);
+    }
+
+    #[test]
+    fn password_store_auto_lock_defaults_to_five_minutes_independent_of_vault() {
+        // The password store must default to 300s, distinct from the SSH
+        // vault's 900s, and the two timers must be independent instances.
+        assert_eq!(PW_DEFAULT_IDLE_TIMEOUT_SECS, 300);
+        let state = AppState::default();
+        assert_eq!(state.auto_lock.idle_timeout_secs(), 900);
+        assert_eq!(state.passwords_auto_lock.idle_timeout_secs(), 300);
+
+        // Changing one must NOT affect the other (separate Arc<AutoLockState>).
+        state.passwords_auto_lock.set_idle_timeout_secs(60);
+        assert_eq!(state.passwords_auto_lock.idle_timeout_secs(), 60);
+        assert_eq!(state.auto_lock.idle_timeout_secs(), 900);
+    }
+
+    #[test]
+    fn reveal_grant_starts_empty() {
+        let state = AppState::default();
+        assert!(state.pw_reveal_grant.lock().unwrap().is_none());
     }
 
     #[test]

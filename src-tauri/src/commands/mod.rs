@@ -8,6 +8,7 @@ pub mod docker;
 pub mod exec;
 pub mod keygen;
 pub mod monitoring;
+pub mod passwords;
 pub mod profile;
 pub mod proxmox;
 pub mod sftp;

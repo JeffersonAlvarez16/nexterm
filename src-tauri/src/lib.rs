@@ -8,16 +8,19 @@
 // - commands: Tauri IPC command handlers
 
 pub mod commands;
+pub mod crypto;
 pub mod error;
 pub mod fs_secure;
+pub mod passwords;
 pub mod profile;
 pub mod ssh;
 pub mod state;
 pub mod vault;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
+use passwords::PasswordStore;
 use state::{AppState, AutoLockState};
 use tokio::sync::Mutex;
 use vault::{suspend_gap_detected, Vault};
@@ -44,6 +47,27 @@ async fn lock_vault(vault: &Mutex<Option<Vault>>) {
     }
 }
 
+/// Lock the INDEPENDENT password store if it is currently unlocked, zeroizing
+/// the derived key, and clear any outstanding reveal grant. Idempotent: safe to
+/// call when already locked or absent. Mirrors [`lock_vault`] but is a separate
+/// path so the password store auto-locks on ITS OWN clock and suspend, never
+/// extended by SSH-vault activity. Clearing the reveal grant here guarantees a
+/// store that auto-locks can never be revealed again without a fresh re-auth.
+async fn lock_passwords(
+    passwords: &Mutex<Option<PasswordStore>>,
+    reveal_grant: &StdMutex<Option<(String, Instant)>>,
+) {
+    let mut guard = passwords.lock().await;
+    if let Some(s) = guard.as_mut() {
+        if s.is_unlocked() {
+            s.lock(); // drops the Zeroizing<[u8;32]>, wiping key material
+            tracing::info!("Password store auto-locked");
+        }
+    }
+    // Always clear the grant on auto-lock, independent of prior unlock state.
+    *reveal_grant.lock().unwrap() = None;
+}
+
 /// Spawn the background idle/suspend auto-lock task.
 ///
 /// The task wakes every [`AUTO_LOCK_TICK`] and:
@@ -55,12 +79,24 @@ async fn lock_vault(vault: &Mutex<Option<Vault>>) {
 ///     `suspend_gap_detected` turns that into a defensive immediate lock.
 ///  2. Otherwise applies the idle-timeout policy via `AutoLockState`.
 ///
-/// It does nothing while the vault is locked or absent (the lock call is a
+/// It does nothing while a store is locked or absent (the lock call is a
 /// no-op). Cleanly stops with the app: it is a detached task on Tauri's async
 /// runtime which is torn down on exit — it never panics on shutdown because it
 /// only ever locks (idempotent) and reads atomics/mutexes that outlive it for
 /// the process lifetime via `Arc`.
-pub fn spawn_auto_lock_task(vault: Arc<Mutex<Option<Vault>>>, auto_lock: Arc<AutoLockState>) {
+///
+/// The SSH vault and the INDEPENDENT password store are each evaluated on their
+/// OWN [`AutoLockState`] clock within the same tick, so SSH activity can never
+/// keep the password store unlocked (and vice-versa). On suspend BOTH are locked
+/// defensively. Locking the password store also clears its reveal grant.
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_auto_lock_task(
+    vault: Arc<Mutex<Option<Vault>>>,
+    auto_lock: Arc<AutoLockState>,
+    passwords: Arc<Mutex<Option<PasswordStore>>>,
+    passwords_auto_lock: Arc<AutoLockState>,
+    pw_reveal_grant: Arc<StdMutex<Option<(String, Instant)>>>,
+) {
     tauri::async_runtime::spawn(async move {
         let mut last_tick = Instant::now();
         loop {
@@ -71,18 +107,25 @@ pub fn spawn_auto_lock_task(vault: Arc<Mutex<Option<Vault>>>, auto_lock: Arc<Aut
             last_tick = now;
 
             // Suspend heuristic: a tick gap far larger than expected means wall
-            // time was lost while we were frozen — lock defensively, immediately.
+            // time was lost while we were frozen — lock BOTH stores defensively.
             if suspend_gap_detected(gap, AUTO_LOCK_TICK, SUSPEND_SLACK) {
-                tracing::info!("Detected clock gap of {gap:?} (likely OS suspend) — locking vault");
+                tracing::info!(
+                    "Detected clock gap of {gap:?} (likely OS suspend) — locking vault + password store"
+                );
                 lock_vault(&vault).await;
+                lock_passwords(&passwords, &pw_reveal_grant).await;
                 // Treat resume as fresh: don't also fire an idle lock on the
                 // same tick using a now-stale activity timestamp.
                 continue;
             }
 
-            // Idle policy. `should_lock_now` already honors timeout==0 (disabled).
+            // Idle policy, evaluated INDEPENDENTLY per store on its own clock.
+            // `should_lock_now` already honors timeout==0 (disabled).
             if auto_lock.should_lock_now(now) {
                 lock_vault(&vault).await;
+            }
+            if passwords_auto_lock.should_lock_now(now) {
+                lock_passwords(&passwords, &pw_reveal_grant).await;
             }
         }
     });
@@ -102,6 +145,10 @@ pub fn run() {
     // `manage` takes ownership of the state.
     let vault_handle = Arc::clone(&app_state.vault);
     let auto_lock_handle = Arc::clone(&app_state.auto_lock);
+    // Independent password-store handles for the same watchdog (own clock).
+    let passwords_handle = Arc::clone(&app_state.passwords);
+    let passwords_auto_lock_handle = Arc::clone(&app_state.passwords_auto_lock);
+    let pw_reveal_grant_handle = Arc::clone(&app_state.pw_reveal_grant);
 
     let mut builder = tauri::Builder::default();
 
@@ -132,8 +179,15 @@ pub fn run() {
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_process::init())?;
 
-            // Start the idle/suspend auto-lock watchdog.
-            spawn_auto_lock_task(Arc::clone(&vault_handle), Arc::clone(&auto_lock_handle));
+            // Start the idle/suspend auto-lock watchdog. It drives BOTH the SSH
+            // vault and the independent password store, each on its own clock.
+            spawn_auto_lock_task(
+                Arc::clone(&vault_handle),
+                Arc::clone(&auto_lock_handle),
+                Arc::clone(&passwords_handle),
+                Arc::clone(&passwords_auto_lock_handle),
+                Arc::clone(&pw_reveal_grant_handle),
+            );
             Ok(())
         })
         .manage(app_state)
@@ -156,6 +210,23 @@ pub fn run() {
             commands::vault::store_credential,
             commands::vault::has_credential,
             commands::vault::delete_credential,
+            // Password manager (independent second vault)
+            commands::passwords::pw_status,
+            commands::passwords::pw_create,
+            commands::passwords::pw_unlock,
+            commands::passwords::pw_lock,
+            commands::passwords::pw_set_idle_timeout,
+            commands::passwords::pw_reset,
+            commands::passwords::pw_change_master,
+            commands::passwords::pw_list,
+            commands::passwords::pw_add,
+            commands::passwords::pw_update,
+            commands::passwords::pw_update_meta,
+            commands::passwords::pw_update_secret,
+            commands::passwords::pw_delete,
+            commands::passwords::pw_reauth,
+            commands::passwords::pw_reveal,
+            commands::passwords::pw_generate,
             // Connection
             commands::connection::connect,
             commands::connection::disconnect,

@@ -21,28 +21,31 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use aes_gcm::aead::{Aead, KeyInit, OsRng};
-use aes_gcm::{Aes256Gcm, Nonce};
-use argon2::{Algorithm, Argon2, Params, Version};
+use aes_gcm::aead::OsRng;
+use argon2::Params;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+use crate::crypto;
 use crate::error::AppError;
 use crate::fs_secure;
+
+// The KDF + AEAD primitives now live in `crate::crypto`. The items the
+// profile-export consumer references (`crate::vault::KdfParams`,
+// `crate::vault::argon2_from_params`, `crate::vault::default_kdf_params`) are
+// re-exported so that path keeps resolving without changes. `SALT_SIZE` is used
+// internally by the `Vault` struct/signatures. vault.rs's public surface is
+// unchanged. (`NONCE_SIZE` is imported directly in the test module where the
+// v1-migration test still needs it.)
+pub(crate) use crate::crypto::{argon2_from_params, default_kdf_params, KdfParams, SALT_SIZE};
 
 /// Vault file name in the app data directory.
 const VAULT_FILE: &str = "vault.json";
 
 /// Current vault format version.
 const VAULT_VERSION: u32 = 2;
-
-/// AES-256-GCM nonce size in bytes.
-const NONCE_SIZE: usize = 12;
-
-/// Salt size in bytes for Argon2id.
-const SALT_SIZE: usize = 32;
 
 /// Fixed plaintext encrypted under the derived key to verify the master
 /// password independently of how many credentials the vault holds. The
@@ -89,41 +92,6 @@ pub fn suspend_gap_detected(
 }
 
 // ─── On-Disk Format ─────────────────────────────────────
-
-/// KDF parameters persisted with the vault so future reads use the exact
-/// settings the file was written with.
-#[derive(Serialize, Deserialize, Clone)]
-pub struct KdfParams {
-    pub algorithm: String,
-    pub m_cost: u32,
-    pub t_cost: u32,
-    pub p_cost: u32,
-}
-
-/// Default Argon2id parameters for newly created / migrated vaults:
-/// m_cost = 64 MiB, t_cost = 3, p_cost = 1.
-pub fn default_kdf_params() -> KdfParams {
-    KdfParams {
-        algorithm: "argon2id".to_string(),
-        m_cost: 65536,
-        t_cost: 3,
-        p_cost: 1,
-    }
-}
-
-/// Build an Argon2id hasher from persisted KDF params. Shared by the vault
-/// and the profile-export path so both derive keys identically.
-pub fn argon2_from_params(p: &KdfParams) -> Result<Argon2<'static>, AppError> {
-    if p.algorithm != "argon2id" {
-        return Err(AppError::VaultError(format!(
-            "Unsupported KDF algorithm: {}",
-            p.algorithm
-        )));
-    }
-    let params = Params::new(p.m_cost, p.t_cost, p.p_cost, None)
-        .map_err(|e| AppError::VaultError(format!("Invalid KDF params: {e}")))?;
-    Ok(Argon2::new(Algorithm::Argon2id, Version::V0x13, params))
-}
 
 /// On-disk shape. `kdf` and `verifier` are absent in legacy v1 files, so they
 /// are optional here and presence drives the v1-vs-v2 branch in `unlock`.
@@ -427,42 +395,20 @@ impl Vault {
     // ─── Private Helpers ────────────────────────────────
 
     /// Derive a 32-byte key from password + salt using Argon2id with the
-    /// supplied KDF params. The key is wrapped in `Zeroizing` so it is wiped
-    /// from memory on drop.
+    /// supplied KDF params. Thin wrapper over [`crypto::derive_key`] kept so the
+    /// existing `Self::derive_key(...)` call sites are untouched.
     fn derive_key(
         password: &str,
         salt: &[u8; SALT_SIZE],
         params: &KdfParams,
     ) -> Result<Zeroizing<[u8; 32]>, AppError> {
-        let mut key = Zeroizing::new([0u8; 32]);
-        argon2_from_params(params)?
-            .hash_password_into(password.as_bytes(), salt, key.as_mut())
-            .map_err(|e| AppError::VaultError(format!("Key derivation failed: {e}")))?;
-        Ok(key)
+        crypto::derive_key(password, salt, params)
     }
 
-    /// Encrypt raw bytes → nonce(12) + ciphertext + tag(16).
+    /// Encrypt raw bytes → nonce(12) + ciphertext + tag(16) under the vault key.
     fn encrypt_bytes(&self, plaintext: &[u8]) -> Result<Vec<u8>, AppError> {
         let key = self.derived_key.as_ref().ok_or(AppError::VaultLocked)?;
-
-        let cipher = Aes256Gcm::new_from_slice(key.as_slice())
-            .map_err(|e| AppError::VaultError(format!("Cipher init failed: {e}")))?;
-
-        // Generate random nonce
-        let mut nonce_bytes = [0u8; NONCE_SIZE];
-        OsRng.fill_bytes(&mut nonce_bytes);
-        let nonce = Nonce::from_slice(&nonce_bytes);
-
-        let ciphertext = cipher
-            .encrypt(nonce, plaintext)
-            .map_err(|e| AppError::VaultError(format!("Encryption failed: {e}")))?;
-
-        // Prepend nonce to ciphertext
-        let mut result = Vec::with_capacity(NONCE_SIZE + ciphertext.len());
-        result.extend_from_slice(&nonce_bytes);
-        result.extend_from_slice(&ciphertext);
-
-        Ok(result)
+        crypto::encrypt_bytes(key, plaintext)
     }
 
     /// Encrypt a plaintext string → nonce(12) + ciphertext + tag(16).
@@ -470,23 +416,11 @@ impl Vault {
         self.encrypt_bytes(plaintext.as_bytes())
     }
 
-    /// Decrypt nonce(12) + ciphertext + tag(16) → raw plaintext bytes.
+    /// Decrypt nonce(12) + ciphertext + tag(16) → raw plaintext bytes under the
+    /// vault key.
     fn decrypt_raw(&self, data: &[u8]) -> Result<Vec<u8>, AppError> {
         let key = self.derived_key.as_ref().ok_or(AppError::VaultLocked)?;
-
-        if data.len() < NONCE_SIZE + 16 {
-            return Err(AppError::VaultError("Ciphertext too short".to_string()));
-        }
-
-        let cipher = Aes256Gcm::new_from_slice(key.as_slice())
-            .map_err(|e| AppError::VaultError(format!("Cipher init failed: {e}")))?;
-
-        let nonce = Nonce::from_slice(&data[..NONCE_SIZE]);
-        let ciphertext = &data[NONCE_SIZE..];
-
-        cipher
-            .decrypt(nonce, ciphertext)
-            .map_err(|_| AppError::VaultError("Decryption failed".to_string()))
+        crypto::decrypt_raw(key, data)
     }
 
     /// Decrypt nonce(12) + ciphertext + tag(16) → plaintext string.
@@ -536,6 +470,14 @@ impl Vault {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The v1-migration test hand-builds a legacy vault file, so it needs the
+    // raw AEAD + Argon2 types and the nonce size directly (these were trimmed
+    // from the module's top-level imports when the primitives moved into
+    // `crate::crypto`).
+    use crate::crypto::NONCE_SIZE;
+    use aes_gcm::aead::{Aead, KeyInit};
+    use aes_gcm::{Aes256Gcm, Nonce};
+    use argon2::Argon2;
 
     // ─── Auto-lock decision cores ───────────────────────
 

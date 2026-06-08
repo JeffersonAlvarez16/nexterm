@@ -58,6 +58,9 @@ pub enum AppError {
     #[error("Wrong master password")]
     VaultWrongPassword,
 
+    #[error("Reveal not authorized — re-authenticate to reveal this secret")]
+    RevealNotAuthorized,
+
     #[error("Transfer cancelled")]
     TransferCancelled,
 
@@ -156,6 +159,16 @@ mod tests {
     }
 
     #[test]
+    fn reveal_not_authorized_serializes_to_clear_string() {
+        let err = AppError::RevealNotAuthorized;
+        let serialized = serde_json::to_string(&err).unwrap();
+        assert_eq!(
+            serialized,
+            "\"Reveal not authorized — re-authenticate to reveal this secret\""
+        );
+    }
+
+    #[test]
     fn exec_cancelled_serializes() {
         let err = AppError::ExecCancelled;
         let serialized = serde_json::to_string(&err).unwrap();
@@ -181,6 +194,7 @@ mod tests {
             AppError::VaultError("test".into()),
             AppError::VaultLocked,
             AppError::VaultWrongPassword,
+            AppError::RevealNotAuthorized,
             AppError::TransferCancelled,
             AppError::KeyError("test".into()),
             AppError::ConnectionTimeout,
