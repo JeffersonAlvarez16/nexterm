@@ -31,6 +31,7 @@ use zeroize::Zeroizing;
 use crate::crypto;
 use crate::error::AppError;
 use crate::fs_secure;
+use crate::secure_mem::LockedKey;
 
 // The KDF + AEAD primitives now live in `crate::crypto`. The items the
 // profile-export consumer references (`crate::vault::KdfParams`,
@@ -113,8 +114,12 @@ struct VaultFile {
 
 pub struct Vault {
     file_path: PathBuf,
-    // TODO(security): best-effort mlock to keep key out of swap
-    derived_key: Option<Zeroizing<[u8; 32]>>,
+    // The in-memory derived key is wrapped in a `LockedKey`, which best-effort
+    // `mlock`s (Unix) / `VirtualLock`s (Windows) the 32 bytes into RAM to keep
+    // them out of swap/hibernation, and zeroizes them on drop. Best-effort:
+    // `RLIMIT_MEMLOCK` / privileges may prevent locking (a warning is logged),
+    // and it reduces but does not eliminate swap exposure.
+    derived_key: Option<LockedKey>,
     salt: [u8; SALT_SIZE],
     kdf_params: KdfParams,
     credentials: HashMap<String, Vec<u8>>,
@@ -152,11 +157,13 @@ impl Vault {
 
         // Derive key with the current default KDF params
         let kdf_params = default_kdf_params();
+        // Move the derived bytes into a LockedKey (best-effort mlock +
+        // zero-on-drop); the Zeroizing source is wiped at end of scope.
         let derived_key = Self::derive_key(master_password, &salt, &kdf_params)?;
 
         let vault = Vault {
             file_path,
-            derived_key: Some(derived_key),
+            derived_key: Some(LockedKey::new(*derived_key)),
             salt,
             kdf_params,
             credentials: HashMap::new(),
@@ -210,7 +217,8 @@ impl Vault {
 
                 let vault = Vault {
                     file_path,
-                    derived_key: Some(derived_key),
+                    // best-effort mlock + zero-on-drop via LockedKey.
+                    derived_key: Some(LockedKey::new(*derived_key)),
                     salt,
                     kdf_params,
                     credentials,
@@ -275,7 +283,7 @@ impl Vault {
         // validates the password here (an AEAD failure ⇒ wrong password).
         let legacy_vault = Vault {
             file_path: file_path.clone(),
-            derived_key: Some(legacy_key),
+            derived_key: Some(LockedKey::new(*legacy_key)),
             salt,
             kdf_params: legacy_params,
             credentials: legacy_credentials,
@@ -298,7 +306,7 @@ impl Vault {
 
         let mut vault = Vault {
             file_path,
-            derived_key: Some(new_key),
+            derived_key: Some(LockedKey::new(*new_key)),
             salt: new_salt,
             kdf_params,
             credentials: HashMap::new(),
@@ -367,9 +375,10 @@ impl Vault {
         self.kdf_params = default_kdf_params();
         let new_key = Self::derive_key(new_password, &new_salt, &self.kdf_params)?;
 
-        // Replacing the key drops the old Zeroizing wrapper, which zeroizes it.
+        // Replacing the key drops the old LockedKey (zeroizing + unlocking it);
+        // the new key is moved into a fresh LockedKey (best-effort re-lock).
         self.salt = new_salt;
-        self.derived_key = Some(new_key);
+        self.derived_key = Some(LockedKey::new(*new_key));
 
         // Re-encrypt all credentials with new key
         self.credentials.clear();
@@ -382,7 +391,7 @@ impl Vault {
     }
 
     /// Lock the vault — clear derived key from memory. Dropping the
-    /// `Zeroizing` wrapper zeroizes the key bytes.
+    /// `LockedKey` zeroizes the key bytes and releases the memory lock.
     pub fn lock(&mut self) {
         self.derived_key = None;
     }
@@ -407,7 +416,11 @@ impl Vault {
 
     /// Encrypt raw bytes → nonce(12) + ciphertext + tag(16) under the vault key.
     fn encrypt_bytes(&self, plaintext: &[u8]) -> Result<Vec<u8>, AppError> {
-        let key = self.derived_key.as_ref().ok_or(AppError::VaultLocked)?;
+        let key = self
+            .derived_key
+            .as_ref()
+            .map(LockedKey::as_bytes)
+            .ok_or(AppError::VaultLocked)?;
         crypto::encrypt_bytes(key, plaintext)
     }
 
@@ -419,7 +432,11 @@ impl Vault {
     /// Decrypt nonce(12) + ciphertext + tag(16) → raw plaintext bytes under the
     /// vault key.
     fn decrypt_raw(&self, data: &[u8]) -> Result<Vec<u8>, AppError> {
-        let key = self.derived_key.as_ref().ok_or(AppError::VaultLocked)?;
+        let key = self
+            .derived_key
+            .as_ref()
+            .map(LockedKey::as_bytes)
+            .ok_or(AppError::VaultLocked)?;
         crypto::decrypt_raw(key, data)
     }
 

@@ -13,6 +13,7 @@ pub mod error;
 pub mod fs_secure;
 pub mod passwords;
 pub mod profile;
+pub mod secure_mem;
 pub mod ssh;
 pub mod state;
 pub mod vault;
@@ -149,6 +150,10 @@ pub fn run() {
     let passwords_handle = Arc::clone(&app_state.passwords);
     let passwords_auto_lock_handle = Arc::clone(&app_state.passwords_auto_lock);
     let pw_reveal_grant_handle = Arc::clone(&app_state.pw_reveal_grant);
+    // A SECOND clone of the reveal-grant handle for the window-blur handler,
+    // which invalidates the fresh reveal grant the moment the window loses focus
+    // (independent of the auto-lock watchdog, which keeps the first clone).
+    let pw_reveal_grant_blur = Arc::clone(&app_state.pw_reveal_grant);
 
     let mut builder = tauri::Builder::default();
 
@@ -188,6 +193,36 @@ pub fn run() {
                 Arc::clone(&passwords_auto_lock_handle),
                 Arc::clone(&pw_reveal_grant_handle),
             );
+
+            // Lock-on-blur for the password reveal grant. When the main window
+            // loses focus, invalidate the fresh reveal grant immediately so a
+            // revealed secret can never be re-revealed after the user tabs away
+            // without a fresh re-auth. This is the SAFE MINIMUM: it clears ONLY
+            // the grant (mirroring `lock_passwords`'s grant-clear) and does NOT
+            // fully lock the password store — idle/suspend already own full
+            // locking. The SSH vault is intentionally left untouched.
+            //
+            // We also emit `pw-focus-lost` so the frontend can hide any
+            // currently-revealed secret in the UI.
+            {
+                use tauri::{Emitter, Manager};
+                if let Some(window) = app.get_webview_window("main") {
+                    let grant = Arc::clone(&pw_reveal_grant_blur);
+                    let emit_window = window.clone();
+                    window.on_window_event(move |event| {
+                        if let tauri::WindowEvent::Focused(false) = event {
+                            *grant.lock().unwrap() = None;
+                            tracing::info!(
+                                "Window lost focus — cleared password reveal grant"
+                            );
+                            // Best-effort UI notification; ignore emit errors
+                            // (e.g. during teardown) since the grant is already
+                            // cleared, which is the security-critical part.
+                            let _ = emit_window.emit("pw-focus-lost", ());
+                        }
+                    });
+                }
+            }
             Ok(())
         })
         .manage(app_state)

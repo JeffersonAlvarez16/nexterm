@@ -48,6 +48,7 @@ use zeroize::Zeroizing;
 use crate::crypto::{self, KdfParams, SALT_SIZE};
 use crate::error::AppError;
 use crate::fs_secure;
+use crate::secure_mem::LockedKey;
 
 /// Password store file name in the app data directory.
 const PASSWORDS_FILE: &str = "passwords.json";
@@ -174,9 +175,16 @@ struct StoreEntry {
 
 /// The independent password store. Holds the derived key in memory while
 /// unlocked and the per-entry ciphertext; decrypts lazily.
+///
+/// The in-memory derived key is wrapped in a [`LockedKey`], which best-effort
+/// `mlock`s (Unix) / `VirtualLock`s (Windows) the 32 bytes into RAM so they are
+/// kept out of swap/hibernation where the OS and process limits permit, and
+/// zeroizes them on drop. Locking is best-effort: `RLIMIT_MEMLOCK` or
+/// insufficient privileges may prevent it (a warning is logged), and it reduces
+/// but does not eliminate swap exposure.
 pub struct PasswordStore {
     file_path: PathBuf,
-    derived_key: Option<Zeroizing<[u8; 32]>>,
+    derived_key: Option<LockedKey>,
     salt: [u8; SALT_SIZE],
     kdf_params: KdfParams,
     entries: BTreeMap<String, StoreEntry>,
@@ -244,11 +252,14 @@ impl PasswordStore {
         OsRng.fill_bytes(&mut salt);
 
         let kdf_params = crypto::default_kdf_params();
+        // Derive into a Zeroizing buffer, then move the bytes into a LockedKey
+        // (best-effort mlock + zero-on-drop). The Zeroizing source is wiped when
+        // it drops at the end of this scope.
         let derived_key = crypto::derive_key(master_password, &salt, &kdf_params)?;
 
         let store = PasswordStore {
             file_path,
-            derived_key: Some(derived_key),
+            derived_key: Some(LockedKey::new(*derived_key)),
             salt,
             kdf_params,
             entries: BTreeMap::new(),
@@ -317,7 +328,9 @@ impl PasswordStore {
 
         let store = PasswordStore {
             file_path,
-            derived_key: Some(derived_key),
+            // Move the verified key bytes into a LockedKey (best-effort mlock +
+            // zero-on-drop). The Zeroizing `derived_key` source is wiped on drop.
+            derived_key: Some(LockedKey::new(*derived_key)),
             salt,
             kdf_params,
             entries,
@@ -373,7 +386,10 @@ impl PasswordStore {
         Ok(ReauthSnapshot {
             salt: self.salt,
             kdf_params: self.kdf_params.clone(),
-            current_key: Zeroizing::new(**current_key),
+            // Copy the 32 key bytes out of the LockedKey into a Zeroizing buffer
+            // so the off-lock re-auth derivation can compare against them; the
+            // copy is wiped on drop.
+            current_key: Zeroizing::new(*current_key.as_bytes()),
         })
     }
 
@@ -382,7 +398,11 @@ impl PasswordStore {
     ///
     /// Entries are returned in stable id order (the on-disk `BTreeMap` order).
     pub fn list(&self) -> Result<Vec<PasswordEntryMeta>, AppError> {
-        let key = self.derived_key.as_ref().ok_or(AppError::VaultLocked)?;
+        let key = self
+            .derived_key
+            .as_ref()
+            .map(LockedKey::as_bytes)
+            .ok_or(AppError::VaultLocked)?;
 
         let mut out = Vec::with_capacity(self.entries.len());
         for (id, entry) in &self.entries {
@@ -418,7 +438,11 @@ impl PasswordStore {
     /// Update an existing entry in place, preserving its `created_at` and
     /// refreshing `updated_at`. Errors if the id does not exist.
     pub fn update(&mut self, id: &str, input: &PasswordEntryInput) -> Result<(), AppError> {
-        let key = self.derived_key.as_ref().ok_or(AppError::VaultLocked)?;
+        let key = self
+            .derived_key
+            .as_ref()
+            .map(LockedKey::as_bytes)
+            .ok_or(AppError::VaultLocked)?;
 
         // Preserve the original created_at by decrypting the existing meta.
         let existing = self
@@ -446,7 +470,11 @@ impl PasswordStore {
     /// This is the lossless edit path: editing listing info must NOT round-trip
     /// the secret through plaintext nor risk clobbering it.
     pub fn update_meta(&mut self, id: &str, input: &MetaInput) -> Result<(), AppError> {
-        let key = self.derived_key.as_ref().ok_or(AppError::VaultLocked)?;
+        let key = self
+            .derived_key
+            .as_ref()
+            .map(LockedKey::as_bytes)
+            .ok_or(AppError::VaultLocked)?;
 
         let existing = self
             .entries
@@ -484,7 +512,11 @@ impl PasswordStore {
     /// fields are preserved. Errors with [`AppError::VaultError`] if the id does
     /// not exist.
     pub fn update_secret(&mut self, id: &str, input: &SecretInput) -> Result<(), AppError> {
-        let key = self.derived_key.as_ref().ok_or(AppError::VaultLocked)?;
+        let key = self
+            .derived_key
+            .as_ref()
+            .map(LockedKey::as_bytes)
+            .ok_or(AppError::VaultLocked)?;
 
         let existing = self
             .entries
@@ -539,7 +571,11 @@ impl PasswordStore {
     /// The fresh re-auth GRANT check happens at the command layer; this method
     /// only requires the store to be unlocked.
     pub fn reveal(&self, id: &str) -> Result<Zeroizing<String>, AppError> {
-        let key = self.derived_key.as_ref().ok_or(AppError::VaultLocked)?;
+        let key = self
+            .derived_key
+            .as_ref()
+            .map(LockedKey::as_bytes)
+            .ok_or(AppError::VaultLocked)?;
 
         let entry = self
             .entries
@@ -562,7 +598,11 @@ impl PasswordStore {
     pub fn change_master_password(&mut self, old: &str, new: &str) -> Result<(), AppError> {
         // Validate the OLD password by re-deriving and comparing (constant-time)
         // against the in-memory key. The store must already be unlocked.
-        let current_key = self.derived_key.as_ref().ok_or(AppError::VaultLocked)?;
+        let current_key = self
+            .derived_key
+            .as_ref()
+            .map(LockedKey::as_bytes)
+            .ok_or(AppError::VaultLocked)?;
         let old_key = crypto::derive_key(old, &self.salt, &self.kdf_params)?;
         if !crypto::ct_eq(old_key.as_slice(), current_key.as_slice()) {
             return Err(AppError::VaultWrongPassword);
@@ -594,10 +634,11 @@ impl PasswordStore {
         }
 
         // Commit the rotation only after every blob re-encrypted successfully.
-        // Replacing the key drops the old Zeroizing wrapper (zeroizes it).
+        // Replacing the key drops the old LockedKey (zeroizing + unlocking it);
+        // the new key is moved into a fresh LockedKey (best-effort re-lock).
         self.salt = new_salt;
         self.kdf_params = new_kdf_params;
-        self.derived_key = Some(new_key);
+        self.derived_key = Some(LockedKey::new(*new_key));
         self.entries = new_entries;
 
         self.save_to_disk()
@@ -613,7 +654,11 @@ impl PasswordStore {
         created_at: i64,
         updated_at: i64,
     ) -> Result<StoreEntry, AppError> {
-        let key = self.derived_key.as_ref().ok_or(AppError::VaultLocked)?;
+        let key = self
+            .derived_key
+            .as_ref()
+            .map(LockedKey::as_bytes)
+            .ok_or(AppError::VaultLocked)?;
 
         let meta_plain = MetaPlain {
             title: input.title.clone(),
@@ -645,7 +690,11 @@ impl PasswordStore {
     /// encrypts the verifier each save (new nonce) so the master password can be
     /// validated on the next unlock.
     fn save_to_disk(&self) -> Result<(), AppError> {
-        let key = self.derived_key.as_ref().ok_or(AppError::VaultLocked)?;
+        let key = self
+            .derived_key
+            .as_ref()
+            .map(LockedKey::as_bytes)
+            .ok_or(AppError::VaultLocked)?;
 
         let mut entries = BTreeMap::new();
         for (id, entry) in &self.entries {
@@ -973,7 +1022,7 @@ mod tests {
         // ...and the revealed password AND notes must be the originals.
         assert_eq!(store.reveal(&id).unwrap().as_str(), "s3cr3t-p@ss");
         let secret_plain = crypto::decrypt_raw(
-            store.derived_key.as_ref().unwrap(),
+            store.derived_key.as_ref().unwrap().as_bytes(),
             &store.entries.get(&id).unwrap().secret,
         )
         .unwrap();
@@ -1050,7 +1099,7 @@ mod tests {
         // The new secret (password + notes) is what is now stored.
         assert_eq!(store.reveal(&id).unwrap().as_str(), "rotated-p@ssw0rd");
         let secret_plain = crypto::decrypt_raw(
-            store.derived_key.as_ref().unwrap(),
+            store.derived_key.as_ref().unwrap().as_bytes(),
             &store.entries.get(&id).unwrap().secret,
         )
         .unwrap();

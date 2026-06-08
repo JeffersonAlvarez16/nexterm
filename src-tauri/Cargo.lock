@@ -2690,6 +2690,7 @@ dependencies = [
  "chrono",
  "dirs",
  "hmac",
+ "libc",
  "open",
  "rand 0.8.5",
  "russh",
