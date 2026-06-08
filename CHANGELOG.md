@@ -6,7 +6,23 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-08
+
+### Added
+- Secure password manager in the right panel: an independent, AES-256-GCM + Argon2id encrypted second vault (`passwords.json`) with its own master password, separate from the SSH credential vault.
+- Per-entry opaque ids with metadata and secret encrypted separately, so listing entries never decrypts the password.
+- Reveal and copy gated by a single-use, id-bound re-authentication grant; the password store has its own 5-minute auto-lock, independent of the SSH vault.
+- Metadata-only edits plus an explicit set/replace-password flow, a configurable password generator (length and character classes) with a live entropy estimate, and a settings panel for rotating the master password and the idle timeout.
+- Resizable left sidebar: drag from its right edge, persisted across sessions and keyboard accessible.
+
+### Security
+- Memory-lock (`mlock` / `VirtualLock`) the derived encryption keys for both the password store and the SSH vault to reduce swap and hibernation exposure (best effort).
+- Tightened the webview CSP `connect-src` to `ipc:` only, removing the GitHub origins; the updater runs Rust-side and is unaffected.
+- Clear the password reveal grant on window blur, and use constant-time comparison on the re-authentication path.
+
 ### Fixed
+- Password dialogs now close only via the close button (no backdrop or Escape dismissal), preventing accidental loss of typed input; restored proper Cancel and Save button styling.
+- Fixed the revealed password rendering one character per line in the entry list.
 - Disabled Tauri updater artifact generation until a valid updater signing key is configured, so release workflows can publish installers for every OS target instead of failing during updater signing.
 - Fixed Windows `fs_secure` Win32 API bindings for `windows` crate 0.61 so the Windows release job can compile.
 - Made auto-lock timer tests portable on Windows by avoiding `Instant` subtraction underflow.
