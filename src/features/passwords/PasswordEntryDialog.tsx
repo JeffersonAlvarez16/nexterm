@@ -141,6 +141,7 @@ export function PasswordEntryDialog({ open, entry, onClose }: PasswordEntryDialo
     <Dialog
       open={open}
       onClose={wipeAndClose}
+      dismissable={false}
       title={isEdit ? t("passwords.entry.editTitle") : t("passwords.entry.addTitle")}
       width="460px"
     >
@@ -226,7 +227,7 @@ export function PasswordEntryDialog({ open, entry, onClose }: PasswordEntryDialo
         {error && <p className="pw-error">{error}</p>}
 
         <div className="pw-entry-actions">
-          <Button type="button" variant="ghost" onClick={wipeAndClose} disabled={saving}>
+          <Button type="button" variant="secondary" onClick={wipeAndClose} disabled={saving}>
             {t("general.cancel")}
           </Button>
           <Button type="submit" disabled={saving}>

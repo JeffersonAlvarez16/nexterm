@@ -141,6 +141,7 @@ export function PasswordSettingsDialog({ open, onClose }: PasswordSettingsDialog
     <Dialog
       open={open}
       onClose={wipeAndClose}
+      dismissable={false}
       title={t("passwords.settings.title")}
       width="480px"
     >
@@ -260,7 +261,7 @@ export function PasswordSettingsDialog({ open, onClose }: PasswordSettingsDialog
         </section>
 
         <div className="pw-entry-actions">
-          <Button type="button" variant="ghost" onClick={wipeAndClose}>
+          <Button type="button" variant="secondary" onClick={wipeAndClose}>
             {t("general.close")}
           </Button>
         </div>

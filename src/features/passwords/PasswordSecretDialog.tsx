@@ -111,6 +111,7 @@ export function PasswordSecretDialog({ open, entry, onClose }: PasswordSecretDia
     <Dialog
       open={open}
       onClose={wipeAndClose}
+      dismissable={false}
       title={t("passwords.secret.title")}
       width="460px"
     >
@@ -159,7 +160,7 @@ export function PasswordSecretDialog({ open, entry, onClose }: PasswordSecretDia
         {error && <p className="pw-error">{error}</p>}
 
         <div className="pw-entry-actions">
-          <Button type="button" variant="ghost" onClick={wipeAndClose} disabled={saving}>
+          <Button type="button" variant="secondary" onClick={wipeAndClose} disabled={saving}>
             {t("general.cancel")}
           </Button>
           <Button type="submit" disabled={saving}>

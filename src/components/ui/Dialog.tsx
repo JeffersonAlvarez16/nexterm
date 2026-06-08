@@ -18,6 +18,11 @@ interface DialogProps {
   "aria-labelledby"?: string;
   /** Literal accessible name, used when there is no visible labelling element. */
   "aria-label"?: string;
+  /**
+   * When false, the dialog only closes via the X button or a programmatic
+   * onClose. Backdrop clicks and the Escape key are ignored. Default true.
+   */
+  dismissable?: boolean;
 }
 
 export function Dialog({
@@ -29,6 +34,7 @@ export function Dialog({
   className = "",
   "aria-labelledby": ariaLabelledby,
   "aria-label": ariaLabel,
+  dismissable = true,
 }: DialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
@@ -52,14 +58,18 @@ export function Dialog({
       style={{ width }}
       aria-labelledby={ariaLabelledby}
       aria-label={ariaLabel}
+      onCancel={(e) => {
+        // Escape key. Block dismissal when the dialog must stay open.
+        if (!dismissable) e.preventDefault();
+      }}
       onClose={(e) => {
         // Native close event (Escape key, .close() call) — sync back to React state
         e.preventDefault();
         onClose();
       }}
       onClick={(e) => {
-        // Close on backdrop click
-        if (e.target === dialogRef.current) {
+        // Close on backdrop click, unless dismissal is disabled.
+        if (dismissable && e.target === dialogRef.current) {
           onClose();
         }
       }}
