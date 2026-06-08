@@ -29,6 +29,10 @@ vi.mock("../../lib/i18n", () => ({
         "panel.sftp": "Files",
         "panel.tunnels": "Tunnels",
         "panel.history": "History",
+        "panel.monitoring": "Monitoring",
+        "panel.docker": "Docker",
+        "panel.proxmox": "Proxmox",
+        "panel.passwords": "Passwords",
         "panel.close": "Close panel",
         "panel.region": "Session panel",
         "panel.sections": "Panel sections",
@@ -45,6 +49,7 @@ const mockSetPanelSection = vi.fn();
 const mockSetPanelOpen = vi.fn();
 const mockSetPanelWidth = vi.fn();
 const mockSetMainView = vi.fn();
+const mockSetPasswordsPanelOpen = vi.fn();
 
 let _workspaceStoreState: ReturnType<typeof makeStoreState>;
 
@@ -86,6 +91,10 @@ vi.mock("../../features/history/HistoryPanel", () => ({
   ),
 }));
 
+vi.mock("../../features/passwords/PasswordsPanel", () => ({
+  PasswordsPanel: () => <div data-testid="passwords-panel" />,
+}));
+
 import { SidePanel } from "./SidePanel";
 import { useSessionStore } from "../../stores/sessionStore";
 
@@ -94,8 +103,11 @@ const mockedUseSessionStore = vi.mocked(useSessionStore);
 function makeStoreState(
   panelOpen = false,
   panelSection: "sftp" | "tunnel" | "history" | null = null,
+  passwordsPanelOpen = false,
 ) {
   return {
+    passwordsPanelOpen,
+    setPasswordsPanelOpen: mockSetPasswordsPanelOpen,
     workspaces: {
       "profile-1:user-1": {
         key: "profile-1:user-1",
@@ -151,6 +163,25 @@ function makeSessionState(
       ],
     ]),
     activeSessionId: sessionId,
+    startupPreview: null,
+    addSession: vi.fn(),
+    removeSession: vi.fn(),
+    setActiveSession: vi.fn(),
+    updateSessionState: vi.fn(),
+    setStartupPreview: vi.fn(),
+    clearStartupPreview: vi.fn(),
+    addTerminalTab: vi.fn(),
+    removeTerminalTab: vi.fn(),
+    replaceTerminalTab: vi.fn(),
+    setActiveTerminal: vi.fn(),
+  };
+}
+
+/** Session store state with ZERO active sessions (welcome / launchpad case). */
+function makeEmptySessionState() {
+  return {
+    sessions: new Map(),
+    activeSessionId: null,
     startupPreview: null,
     addSession: vi.fn(),
     removeSession: vi.fn(),
@@ -365,5 +396,61 @@ describe("SidePanel — HistoryPanel mount", () => {
     _workspaceStoreState = makeStoreState(true, "history");
     render(<SidePanel />);
     expect(screen.getByText("History")).toBeInTheDocument();
+  });
+});
+
+// ── Passwords manager reachable WITHOUT an active SSH session (FIX #1) ─────────
+// Regression guard: with zero SSH sessions the Passwords rail button must still
+// mount, must NOT early-return on toggle, and toggling open must show the
+// PasswordsPanel. The passwords state is GLOBAL, not per-workspace.
+
+describe("SidePanel — passwords manager with NO active session", () => {
+  beforeEach(() => {
+    // Override the default (one-session) state: simulate zero SSH sessions.
+    mockedUseSessionStore.mockReturnValue(
+      makeEmptySessionState() as ReturnType<typeof useSessionStore>,
+    );
+  });
+
+  it("renders the Passwords (padlock) rail button even with no session", () => {
+    render(<SidePanel />);
+    expect(
+      screen.getByRole("button", { name: "Passwords" }),
+    ).toBeInTheDocument();
+  });
+
+  it("toggling the Passwords button calls the GLOBAL setter (no workspaceKey early-return)", () => {
+    render(<SidePanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Passwords" }));
+    // Must use the global setter, and must NOT touch per-workspace panel state.
+    expect(mockSetPasswordsPanelOpen).toHaveBeenCalledWith(true);
+    expect(mockSetPanelSection).not.toHaveBeenCalled();
+    expect(mockSetPanelOpen).not.toHaveBeenCalled();
+  });
+
+  it("shows PasswordsPanel when passwordsPanelOpen is true and there is no session", () => {
+    _workspaceStoreState = makeStoreState(false, null, /* passwordsPanelOpen */ true);
+    render(<SidePanel />);
+    expect(screen.getByTestId("passwords-panel")).toBeInTheDocument();
+    // The content region is open and titled Passwords.
+    expect(
+      screen.getByRole("region", { name: "Session panel" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Passwords")).toBeInTheDocument();
+  });
+
+  it("Passwords button reflects open state via aria-pressed with no session", () => {
+    _workspaceStoreState = makeStoreState(false, null, true);
+    render(<SidePanel />);
+    expect(
+      screen.getByRole("button", { name: "Passwords" }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("clicking the already-open Passwords button closes it (global setter false)", () => {
+    _workspaceStoreState = makeStoreState(false, null, true);
+    render(<SidePanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Passwords" }));
+    expect(mockSetPasswordsPanelOpen).toHaveBeenCalledWith(false);
   });
 });

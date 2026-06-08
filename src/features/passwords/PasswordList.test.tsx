@@ -1,0 +1,88 @@
+// features/passwords/PasswordList.test.tsx
+//
+// FIX #3 follow-through: the reveal grant is SINGLE-USE and ID-BOUND. Every
+// reveal/copy opens a re-auth prompt and calls reauth(id, master) for THAT row
+// immediately before reveal(id) — no prior grant is assumed to cover the row.
+// Also covers the new "Set password" affordance (FIX #4).
+
+import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function showModal() {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function close() {
+    this.open = false;
+  };
+});
+
+vi.mock("../../lib/i18n", () => ({
+  useI18n: () => ({ t: (k: string) => k, locale: "en", setLocale: vi.fn() }),
+  I18nProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+vi.mock("../../lib/clipboard", () => ({
+  copySecret: vi.fn().mockResolvedValue(undefined),
+}));
+
+import { PasswordList } from "./PasswordList";
+import {
+  usePasswordStore,
+  type PasswordEntryMeta,
+} from "../../stores/passwordStore";
+
+const META: PasswordEntryMeta = {
+  id: "row-1",
+  title: "GitHub",
+  username: "octocat",
+  url: "https://github.com",
+  category: "Work",
+  createdAt: 1,
+  updatedAt: 2,
+};
+
+const reauth = vi.fn().mockResolvedValue(30);
+const reveal = vi.fn().mockResolvedValue("the-plaintext");
+const remove = vi.fn().mockResolvedValue(undefined);
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  usePasswordStore.setState({
+    entries: [META],
+    loading: false,
+    reauth,
+    reveal,
+    remove,
+  } as never);
+});
+
+describe("PasswordList — single-use, id-bound reveal", () => {
+  it("reveal re-auths for THAT row then reveals it", async () => {
+    render(<PasswordList onEdit={() => {}} onSetPassword={() => {}} />);
+
+    // Click reveal on the row -> a re-auth dialog opens.
+    fireEvent.click(screen.getByRole("button", { name: "passwords.reveal" }));
+
+    const masterInput = document.getElementById("pw-reauth-password") as HTMLInputElement;
+    expect(masterInput).not.toBeNull();
+    fireEvent.change(masterInput, { target: { value: "master-pw" } });
+
+    // Confirm the re-auth.
+    fireEvent.click(screen.getByText("passwords.reauth.confirm"));
+
+    await vi.waitFor(() => expect(reauth).toHaveBeenCalledTimes(1));
+    // Bound to THIS row's id, in (id, master) order.
+    expect(reauth).toHaveBeenCalledWith(META.id, "master-pw");
+    await vi.waitFor(() => expect(reveal).toHaveBeenCalledWith(META.id));
+  });
+
+  it("'Set password' triggers the onSetPassword callback for the row", () => {
+    const onSetPassword = vi.fn();
+    render(<PasswordList onEdit={() => {}} onSetPassword={onSetPassword} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "passwords.setPassword" }));
+
+    expect(onSetPassword).toHaveBeenCalledWith(META);
+  });
+});

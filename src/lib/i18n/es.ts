@@ -619,4 +619,99 @@ export const es: Record<TranslationKey, string> = {
   "proxmox.snapshot.delete.arm": "Eliminar",
   "proxmox.snapshot.delete.confirm": "Confirmar Eliminación",
   "proxmox.snapshot.delete.cancel": "Cancelar",
+
+  // Side panel — passwords section
+  "panel.passwords": "Contraseñas",
+
+  // Password manager (independent second vault)
+  "passwords.title": "Gestor de Contraseñas",
+  "passwords.createMessage": "Creá una contraseña maestra separada para proteger tus contraseñas guardadas",
+  "passwords.unlockMessage": "Ingresá la contraseña maestra del gestor para desbloquear",
+  "passwords.masterPassword": "Contraseña Maestra",
+  "passwords.newPassword": "Contraseña Maestra",
+  "passwords.confirmPassword": "Confirmar Contraseña",
+  "passwords.newPasswordPlaceholder": "Elegí una contraseña maestra (mín. 12)",
+  "passwords.confirmPlaceholder": "Repetí la contraseña",
+  "passwords.unlockPlaceholder": "Ingresá la contraseña maestra",
+  "passwords.create": "Crear Gestor de Contraseñas",
+  "passwords.unlock": "Desbloquear",
+  "passwords.lock": "Bloquear",
+  "passwords.add": "Agregar Contraseña",
+  "passwords.reveal": "Mostrar",
+  "passwords.hide": "Ocultar",
+  "passwords.copy": "Copiar",
+  "passwords.edit": "Editar",
+  "passwords.delete": "Eliminar",
+  "passwords.deleteConfirm": "Confirmar eliminación",
+  "passwords.empty": "Aún no hay contraseñas guardadas",
+  "passwords.emptyHint": "Hacé clic en Agregar Contraseña para guardar la primera",
+  "passwords.passwordRequired": "La contraseña es requerida",
+  "passwords.passwordTooShort": "Usá al menos {min} caracteres",
+  "passwords.passwordMismatch": "Las contraseñas no coinciden",
+  "passwords.wrongPassword": "Contraseña maestra incorrecta",
+  "passwords.forgotPassword": "¿Olvidaste tu contraseña?",
+  "passwords.capsLockOn": "Bloq Mayús está activado",
+
+  // Password manager — re-auth (reveal gate)
+  "passwords.reauth.title": "Confirmar Contraseña Maestra",
+  "passwords.reauth.message": "Volvé a ingresar tu contraseña maestra para mostrar o copiar esta contraseña.",
+  "passwords.reauth.confirm": "Confirmar",
+
+  // Password manager — reset (erase) flow
+  "passwords.reset.title": "Borrar Todas las Contraseñas",
+  "passwords.reset.warning": "Si restablecés el gestor de contraseñas, TODAS las contraseñas guardadas se eliminarán permanentemente. Tu bóveda SSH y tus perfiles de conexión NO se ven afectados.",
+  "passwords.reset.irreversible": "Esta acción no se puede deshacer.",
+  "passwords.reset.confirmCheck": "Entiendo que todas las contraseñas guardadas se borrarán",
+  "passwords.reset.confirm": "Borrar Todo",
+
+  // Password manager — entry add/edit dialog
+  "passwords.entry.addTitle": "Agregar Contraseña",
+  "passwords.entry.editTitle": "Editar Contraseña",
+  "passwords.entry.fieldTitle": "Título",
+  "passwords.entry.fieldUsername": "Usuario",
+  "passwords.entry.fieldUrl": "URL",
+  "passwords.entry.fieldCategory": "Categoría",
+  "passwords.entry.fieldPassword": "Contraseña",
+  "passwords.entry.fieldNotes": "Notas",
+  "passwords.entry.titlePlaceholder": "ej. GitHub",
+  "passwords.entry.usernamePlaceholder": "ej. vos@ejemplo.com",
+  "passwords.entry.urlPlaceholder": "ej. https://github.com",
+  "passwords.entry.categoryPlaceholder": "ej. Trabajo",
+  "passwords.entry.passwordPlaceholder": "Ingresá o generá una contraseña",
+  "passwords.entry.passwordEditPlaceholder": "Ingresá una nueva contraseña para reemplazar la actual",
+  "passwords.entry.notesPlaceholder": "Notas opcionales",
+  "passwords.entry.generate": "Generar",
+  "passwords.entry.titleRequired": "El título es requerido",
+  "passwords.entry.passwordRequired": "La contraseña es requerida",
+  "passwords.entry.editMetaHint":
+    "Solo se editan los datos. Esto no cambia la contraseña guardada — usá «Definir contraseña» para eso.",
+
+  // ── Definir / reemplazar contraseña (solo secreto) ──
+  "passwords.setPassword": "Definir contraseña",
+  "passwords.secret.title": "Definir / Reemplazar Contraseña",
+  "passwords.secret.warning":
+    "Esto reemplaza la contraseña guardada (y las notas) de «{title}». La contraseña anterior no se puede recuperar.",
+  "passwords.secret.warningGeneric":
+    "Esto reemplaza la contraseña guardada (y las notas). La contraseña anterior no se puede recuperar.",
+  "passwords.secret.fieldNewPassword": "Nueva contraseña",
+  "passwords.secret.fieldNewNotes": "Notas (reemplazan las existentes)",
+  "passwords.secret.save": "Reemplazar contraseña",
+
+  // ── Ajustes (cambiar maestra + tiempo de inactividad) ──
+  "passwords.settings.title": "Ajustes del Gestor de Contraseñas",
+  "passwords.settings.open": "Ajustes",
+  "passwords.settings.changeMasterTitle": "Cambiar contraseña maestra",
+  "passwords.settings.changeMasterHint":
+    "Vuelve a cifrar el gestor con una nueva contraseña maestra. La necesitarás para desbloquear de ahora en más.",
+  "passwords.settings.currentPassword": "Contraseña maestra actual",
+  "passwords.settings.newPassword": "Nueva contraseña maestra",
+  "passwords.settings.changeMasterAction": "Cambiar contraseña maestra",
+  "passwords.settings.changeMasterSuccess": "Contraseña maestra cambiada.",
+  "passwords.settings.idleTitle": "Tiempo de bloqueo automático",
+  "passwords.settings.idleHint":
+    "Bloquea el gestor de contraseñas tras este tiempo de inactividad.",
+  "passwords.settings.idleLabel": "Bloquear tras",
+  "passwords.settings.idleMinutes": "{minutes} min",
+  "passwords.settings.idleAction": "Guardar tiempo",
+  "passwords.settings.idleSuccess": "Tiempo de bloqueo automático guardado.",
 };

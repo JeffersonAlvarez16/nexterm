@@ -552,15 +552,26 @@ function App() {
 						</div>
 					</div>
 				) : (
-					<WelcomeLaunchpad
-						connecting={connecting}
-						connectingProfileId={connectingProfileId}
-						connectError={connectError}
-						onNewProfile={handleNewProfile}
-						onConnect={handleConnect}
-						onCancelConnect={cancelConnect}
-						profiles={profiles}
-					/>
+					/* No active SSH session: the launchpad fills the main area, but the
+					   SidePanel rail still docks on the right so the session-independent
+					   password manager (padlock affordance + PasswordsPanel drawer)
+					   remains reachable with zero sessions. */
+					<div className="session-view">
+						<div className="session-content">
+							<div className="session-main">
+								<WelcomeLaunchpad
+									connecting={connecting}
+									connectingProfileId={connectingProfileId}
+									connectError={connectError}
+									onNewProfile={handleNewProfile}
+									onConnect={handleConnect}
+									onCancelConnect={cancelConnect}
+									profiles={profiles}
+								/>
+							</div>
+							<SidePanel />
+						</div>
+					</div>
 				)}
 			</AppLayout>
 

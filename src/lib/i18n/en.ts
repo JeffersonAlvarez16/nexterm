@@ -617,6 +617,101 @@ export const en = {
   "proxmox.snapshot.delete.arm": "Delete",
   "proxmox.snapshot.delete.confirm": "Confirm Delete",
   "proxmox.snapshot.delete.cancel": "Cancel",
+
+  // Side panel — passwords section
+  "panel.passwords": "Passwords",
+
+  // Password manager (independent second vault)
+  "passwords.title": "Password Manager",
+  "passwords.createMessage": "Create a separate master password to protect your saved passwords",
+  "passwords.unlockMessage": "Enter the password manager's master password to unlock",
+  "passwords.masterPassword": "Master Password",
+  "passwords.newPassword": "Master Password",
+  "passwords.confirmPassword": "Confirm Password",
+  "passwords.newPasswordPlaceholder": "Choose a master password (min 12)",
+  "passwords.confirmPlaceholder": "Re-enter password",
+  "passwords.unlockPlaceholder": "Enter master password",
+  "passwords.create": "Create Password Store",
+  "passwords.unlock": "Unlock",
+  "passwords.lock": "Lock",
+  "passwords.add": "Add Password",
+  "passwords.reveal": "Reveal",
+  "passwords.hide": "Hide",
+  "passwords.copy": "Copy",
+  "passwords.edit": "Edit",
+  "passwords.delete": "Delete",
+  "passwords.deleteConfirm": "Confirm delete",
+  "passwords.empty": "No passwords saved yet",
+  "passwords.emptyHint": "Click Add Password to save your first one",
+  "passwords.passwordRequired": "Password is required",
+  "passwords.passwordTooShort": "Use at least {min} characters",
+  "passwords.passwordMismatch": "Passwords don't match",
+  "passwords.wrongPassword": "Wrong master password",
+  "passwords.forgotPassword": "Forgot your password?",
+  "passwords.capsLockOn": "Caps Lock is on",
+
+  // Password manager — re-auth (reveal gate)
+  "passwords.reauth.title": "Confirm Master Password",
+  "passwords.reauth.message": "Re-enter your master password to reveal or copy this password.",
+  "passwords.reauth.confirm": "Confirm",
+
+  // Password manager — reset (erase) flow
+  "passwords.reset.title": "Erase All Passwords",
+  "passwords.reset.warning": "If you reset the password manager, ALL saved passwords will be permanently deleted. Your SSH vault and connection profiles are NOT affected.",
+  "passwords.reset.irreversible": "This action cannot be undone.",
+  "passwords.reset.confirmCheck": "I understand all saved passwords will be erased",
+  "passwords.reset.confirm": "Erase Everything",
+
+  // Password manager — entry add/edit dialog
+  "passwords.entry.addTitle": "Add Password",
+  "passwords.entry.editTitle": "Edit Password",
+  "passwords.entry.fieldTitle": "Title",
+  "passwords.entry.fieldUsername": "Username",
+  "passwords.entry.fieldUrl": "URL",
+  "passwords.entry.fieldCategory": "Category",
+  "passwords.entry.fieldPassword": "Password",
+  "passwords.entry.fieldNotes": "Notes",
+  "passwords.entry.titlePlaceholder": "e.g. GitHub",
+  "passwords.entry.usernamePlaceholder": "e.g. you@example.com",
+  "passwords.entry.urlPlaceholder": "e.g. https://github.com",
+  "passwords.entry.categoryPlaceholder": "e.g. Work",
+  "passwords.entry.passwordPlaceholder": "Enter or generate a password",
+  "passwords.entry.passwordEditPlaceholder": "Enter a new password to replace the current one",
+  "passwords.entry.notesPlaceholder": "Optional notes",
+  "passwords.entry.generate": "Generate",
+  "passwords.entry.titleRequired": "Title is required",
+  "passwords.entry.passwordRequired": "Password is required",
+  "passwords.entry.editMetaHint":
+    "Editing details only. This does not change the stored password — use “Set password” for that.",
+
+  // ── Set / replace password (secret-only) dialog ──
+  "passwords.setPassword": "Set password",
+  "passwords.secret.title": "Set / Replace Password",
+  "passwords.secret.warning":
+    "This replaces the stored password (and notes) for “{title}”. The previous password cannot be recovered.",
+  "passwords.secret.warningGeneric":
+    "This replaces the stored password (and notes). The previous password cannot be recovered.",
+  "passwords.secret.fieldNewPassword": "New password",
+  "passwords.secret.fieldNewNotes": "Notes (replaces existing)",
+  "passwords.secret.save": "Replace password",
+
+  // ── Settings dialog (change master + idle timeout) ──
+  "passwords.settings.title": "Password Manager Settings",
+  "passwords.settings.open": "Settings",
+  "passwords.settings.changeMasterTitle": "Change master password",
+  "passwords.settings.changeMasterHint":
+    "Re-encrypts the password store under a new master password. You will need it to unlock from now on.",
+  "passwords.settings.currentPassword": "Current master password",
+  "passwords.settings.newPassword": "New master password",
+  "passwords.settings.changeMasterAction": "Change master password",
+  "passwords.settings.changeMasterSuccess": "Master password changed.",
+  "passwords.settings.idleTitle": "Auto-lock timeout",
+  "passwords.settings.idleHint":
+    "Lock the password manager after this much inactivity.",
+  "passwords.settings.idleLabel": "Lock after",
+  "passwords.settings.idleMinutes": "{minutes} min",
+  "passwords.settings.idleAction": "Save timeout",
+  "passwords.settings.idleSuccess": "Auto-lock timeout saved.",
 } as const;
 
 export type TranslationKey = keyof typeof en;
