@@ -446,6 +446,16 @@ export const en = {
   "vault.hidePassword": "Hide password",
   "vault.capsLockOn": "Caps Lock is on",
 
+  // About dialog
+  "about.button": "About NexTerm",
+  "about.title": "About NexTerm",
+  "about.description": "A cross-platform SSH client with terminal, SFTP, tunneling, and more.",
+  "about.version": "Version {version}",
+  "about.viewOnGitHub": "View project on GitHub",
+  "about.checkUpdates": "Check for updates",
+  "about.checking": "Checking...",
+  "about.upToDate": "You're up to date",
+
   // Update
   "update.available": "Update Available",
   "update.newVersion": "Version {version} is available",

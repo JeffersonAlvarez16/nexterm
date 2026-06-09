@@ -1,9 +1,11 @@
 // components/layout/StatusBar.tsx — Bottom status bar with language switcher + theme picker + update badge
 
+import { useState, Fragment } from "react";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useUpdateStore } from "../../stores/updateStore";
 import { useI18n, type Locale } from "../../lib/i18n";
 import { ThemePicker } from "../theme/ThemePicker";
+import { AboutDialog } from "../../features/about/AboutDialog";
 
 interface StatusBarProps {
   onStartTour?: () => void;
@@ -13,6 +15,7 @@ export function StatusBar({ onStartTour }: StatusBarProps) {
   const { t, locale, setLocale } = useI18n();
   const { sessions, activeSessionId } = useSessionStore();
   const { status, isCritical } = useUpdateStore();
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   // Show badge when user dismissed a normal update
   const showUpdateBadge = status === "dismissed" && !isCritical;
@@ -43,6 +46,7 @@ export function StatusBar({ onStartTour }: StatusBarProps) {
   };
 
   return (
+    <Fragment>
     <footer className="statusbar">
       {/* ── Left cluster: live count + terminal count ── */}
       <div className="statusbar-cluster statusbar-cluster-left">
@@ -89,6 +93,14 @@ export function StatusBar({ onStartTour }: StatusBarProps) {
           </button>
         )}
 
+        <button
+          className="statusbar-about-btn"
+          onClick={() => setAboutOpen(true)}
+          title={t("about.button")}
+        >
+          ⓘ
+        </button>
+
         {onStartTour && (
           <button
             className="statusbar-help-btn"
@@ -110,5 +122,8 @@ export function StatusBar({ onStartTour }: StatusBarProps) {
         </button>
       </div>
     </footer>
+
+    <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
+    </Fragment>
   );
 }

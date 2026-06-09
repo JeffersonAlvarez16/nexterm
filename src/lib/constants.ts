@@ -16,6 +16,7 @@ export const TERMINAL_LINE_HEIGHT = 1.35;
 export const TERMINAL_THEME = THEMES.lamplight.terminalTheme;
 
 export const APP_NAME = "NexTerm";
+export const REPO_URL = "https://github.com/JeffersonAlvarez16/nexterm";
 export const KEYCHAIN_SERVICE = "nexterm";
 export const RESIZE_DEBOUNCE_MS = 100;
 export const MIN_WINDOW_WIDTH = 1024;

@@ -448,6 +448,16 @@ export const es: Record<TranslationKey, string> = {
   "vault.hidePassword": "Ocultar contraseña",
   "vault.capsLockOn": "Bloq Mayús está activado",
 
+  // About dialog
+  "about.button": "Acerca de NexTerm",
+  "about.title": "Acerca de NexTerm",
+  "about.description": "Cliente SSH multiplataforma con terminal, SFTP, tunelización y más.",
+  "about.version": "Versión {version}",
+  "about.viewOnGitHub": "Ver proyecto en GitHub",
+  "about.checkUpdates": "Buscar actualizaciones",
+  "about.checking": "Buscando...",
+  "about.upToDate": "Ya tenés la última versión",
+
   // Update
   "update.available": "Actualización Disponible",
   "update.newVersion": "La versión {version} está disponible",
