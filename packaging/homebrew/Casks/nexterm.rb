@@ -16,46 +16,31 @@
 #
 # ============================================================================
 #
-# ARCH-SPECIFIC DMGs (current release model):
+# UNIVERSAL DMG (current release model):
 #
-# The NexTerm release workflow produces two separate DMGs per version:
-#   NexTerm_<version>_aarch64.dmg  — Apple Silicon (arm64)
-#   NexTerm_<version>_x86_64.dmg  — Intel (x86_64)
+# The release workflow builds `universal-apple-darwin` — a single DMG that runs
+# natively on BOTH Apple Silicon (arm64) and Intel (x86_64):
+#   NexTerm_<version>_universal.dmg
 #
-# This cask uses on_arm / on_intel blocks accordingly.
-#
-# UNIVERSAL DMG alternative (if you ever ship a single universal binary):
-# Replace the two on_arm/on_intel blocks with:
-#
-#   url "https://github.com/JeffersonAlvarez16/nexterm/releases/download/v#{version}/NexTerm_#{version}_universal.dmg"
-#   sha256 "<PLACEHOLDER: shasum -a 256 NexTerm_<version>_universal.dmg>"
-#
+# So this cask uses a single url + sha256 (no on_arm / on_intel split).
+# NOTE: confirm the exact DMG filename on the first universal release and adjust
+# the url if Tauri names it differently.
 # ============================================================================
 
 cask "nexterm" do
   version "0.3.0"
 
   # --------------------------------------------------------------------------
-  # SHA-256 PLACEHOLDERS
+  # SHA-256 PLACEHOLDER
   #
-  # After downloading the release DMGs, compute each digest with:
-  #   shasum -a 256 NexTerm_0.3.0_aarch64.dmg
-  #   shasum -a 256 NexTerm_0.3.0_x86_64.dmg
-  #
-  # Then replace the placeholder strings below with the hex output.
+  # After downloading the release DMG, compute its digest with:
+  #   shasum -a 256 NexTerm_0.3.0_universal.dmg
+  # Then replace the placeholder string below with the hex output.
   # --------------------------------------------------------------------------
 
-  on_arm do
-    url "https://github.com/JeffersonAlvarez16/nexterm/releases/download/v#{version}/NexTerm_#{version}_aarch64.dmg"
-    # PLACEHOLDER: replace with: shasum -a 256 NexTerm_#{version}_aarch64.dmg
-    sha256 "0000000000000000000000000000000000000000000000000000000000000000"
-  end
-
-  on_intel do
-    url "https://github.com/JeffersonAlvarez16/nexterm/releases/download/v#{version}/NexTerm_#{version}_x86_64.dmg"
-    # PLACEHOLDER: replace with: shasum -a 256 NexTerm_#{version}_x86_64.dmg
-    sha256 "0000000000000000000000000000000000000000000000000000000000000000"
-  end
+  url "https://github.com/JeffersonAlvarez16/nexterm/releases/download/v#{version}/NexTerm_#{version}_universal.dmg"
+  # PLACEHOLDER: replace with: shasum -a 256 NexTerm_#{version}_universal.dmg
+  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
 
   name "NexTerm"
   desc "Modern SSH and connection manager with integrated password vault"

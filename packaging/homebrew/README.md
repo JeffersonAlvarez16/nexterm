@@ -73,41 +73,33 @@ homebrew-tap/
 ## Updating the cask for a new release
 
 After every release you must update two fields in `Casks/nexterm.rb`:
-`version` and the `sha256` digests.
+`version` and the `sha256` digest. The release ships a single **universal** DMG
+(arm64 + x86_64 in one file), so there is only one digest to update.
 
-### 1. Download the release DMGs
+### 1. Download the release DMG
 
 ```sh
 VERSION="0.3.0"   # replace with the new version
-curl -LO "https://github.com/JeffersonAlvarez16/nexterm/releases/download/v${VERSION}/NexTerm_${VERSION}_aarch64.dmg"
-curl -LO "https://github.com/JeffersonAlvarez16/nexterm/releases/download/v${VERSION}/NexTerm_${VERSION}_x86_64.dmg"
+curl -LO "https://github.com/JeffersonAlvarez16/nexterm/releases/download/v${VERSION}/NexTerm_${VERSION}_universal.dmg"
 ```
 
-### 2. Compute the sha256 digests
+### 2. Compute the sha256 digest
 
 ```sh
-shasum -a 256 "NexTerm_${VERSION}_aarch64.dmg"
-shasum -a 256 "NexTerm_${VERSION}_x86_64.dmg"
+shasum -a 256 "NexTerm_${VERSION}_universal.dmg"
 ```
 
-Each command prints a 64-character hex digest followed by the filename.
+The command prints a 64-character hex digest followed by the filename.
 
 ### 3. Update `Casks/nexterm.rb` in the tap repo
 
-Replace `version` and both `sha256` placeholders:
+Replace `version` and the `sha256` placeholder:
 
 ```ruby
 version "0.3.0"   # ← new version
 
-on_arm do
-  url "https://github.com/JeffersonAlvarez16/nexterm/releases/download/v#{version}/NexTerm_#{version}_aarch64.dmg"
-  sha256 "<paste arm64 digest here>"
-end
-
-on_intel do
-  url "https://github.com/JeffersonAlvarez16/nexterm/releases/download/v#{version}/NexTerm_#{version}_x86_64.dmg"
-  sha256 "<paste x86_64 digest here>"
-end
+url "https://github.com/JeffersonAlvarez16/nexterm/releases/download/v#{version}/NexTerm_#{version}_universal.dmg"
+sha256 "<paste universal digest here>"
 ```
 
 ### 4. Commit and push to the tap repo
@@ -134,17 +126,15 @@ brew style Casks/nexterm.rb
 
 ## DMG filename convention
 
-Tauri v2's default artifact naming for macOS DMGs is:
+The release workflow builds a single **universal** macOS binary
+(`--target universal-apple-darwin`), so there is one DMG per release:
 
-| Arch | Filename |
+| Build | Filename |
 |---|---|
-| Apple Silicon (arm64) | `NexTerm_<version>_aarch64.dmg` |
-| Intel (x86_64) | `NexTerm_<version>_x86_64.dmg` |
+| Universal (arm64 + x86_64) | `NexTerm_<version>_universal.dmg` |
 
-If a universal binary is ever shipped, the filename would be
-`NexTerm_<version>_universal.dmg` and the cask would use a single `url`/`sha256`
-pair instead of the `on_arm`/`on_intel` blocks (see the comment at the top of
-`nexterm.rb`).
+Confirm the exact filename on the first universal release (Tauri's artifact
+naming) and adjust the cask `url` if it differs.
 
 ---
 
