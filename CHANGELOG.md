@@ -6,6 +6,11 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-06-09
+
+### Changed
+- Maintenance release validating the in-app auto-update pipeline end to end (no user-facing changes).
+
 ## [0.4.0] - 2026-06-09
 
 ### Added
