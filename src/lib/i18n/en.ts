@@ -707,6 +707,21 @@ export const en = {
   "passwords.secret.fieldNewNotes": "Notes (replaces existing)",
   "passwords.secret.save": "Replace password",
 
+  // ── Export / Import ──
+  "passwords.export": "Export",
+  "passwords.import": "Import",
+  "passwords.exportTitle": "Export Passwords",
+  "passwords.exportWarning":
+    "The exported CSV file will contain ALL your passwords in plain text. " +
+    "Store it in a secure location and delete it when no longer needed.",
+  "passwords.exportMasterLabel": "Master password (required to export)",
+  "passwords.exportMasterPlaceholder": "Enter your master password",
+  "passwords.exportConfirm": "Export to CSV",
+  "passwords.exportSuccess": "Exported {count} passwords to CSV",
+  "passwords.importSuccess": "Imported {count} passwords",
+  "passwords.importError": "Failed to import passwords",
+  "passwords.exportError": "Failed to export passwords",
+
   // ── Settings dialog (change master + idle timeout) ──
   "passwords.settings.title": "Password Manager Settings",
   "passwords.settings.open": "Settings",

@@ -734,6 +734,345 @@ impl PasswordStore {
         fs_secure::secure_write(&self.file_path, json.as_bytes())
             .map_err(|e| AppError::VaultError(format!("Failed to write passwords: {e}")))
     }
+
+    // ─── Export / Import ────────────────────────────────────
+
+    /// Export ALL entries to a Bitwarden-compatible CSV file at `path`.
+    ///
+    /// The master password is re-verified before any decryption takes place.
+    /// Every entry's secret blob is decrypted in order to write the cleartext
+    /// CSV; the decrypted buffer is wrapped in `Zeroizing` and wiped on drop
+    /// so at most one entry's plaintext is live in memory at a time.
+    ///
+    /// CSV header:
+    ///   `folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp`
+    ///
+    /// Returns the number of entries written.
+    pub fn export_to_csv(
+        &self,
+        path: &std::path::Path,
+        master_password: &str,
+    ) -> Result<usize, AppError> {
+        // Re-verify master password before touching any secret blobs.
+        if !self.verify_password(master_password)? {
+            return Err(AppError::VaultWrongPassword);
+        }
+
+        let key = self
+            .derived_key
+            .as_ref()
+            .map(LockedKey::as_bytes)
+            .ok_or(AppError::VaultLocked)?;
+
+        let mut rows: Vec<String> = Vec::with_capacity(self.entries.len() + 1);
+        rows.push(
+            "folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp"
+                .to_string(),
+        );
+
+        for (id, entry) in &self.entries {
+            // Decrypt meta for listing fields.
+            let meta_plain_bytes = crypto::decrypt_raw(key, &entry.meta)?;
+            let meta: MetaPlain = serde_json::from_slice(&meta_plain_bytes)
+                .map_err(|e| AppError::VaultError(format!("Corrupt meta for {id}: {e}")))?;
+
+            // Decrypt secret for the password/notes — wiped on drop.
+            let secret_plain_bytes = Zeroizing::new(crypto::decrypt_raw(key, &entry.secret)?);
+            let secret: SecretPlain = serde_json::from_slice(&secret_plain_bytes)
+                .map_err(|e| AppError::VaultError(format!("Corrupt secret for {id}: {e}")))?;
+
+            let row = format!(
+                "{},{},login,{},{},{},{},{},{},{},{}",
+                csv_field(&meta.category),
+                "", // favorite — empty
+                csv_field(&meta.title),
+                csv_field(&secret.notes),
+                "", // fields — empty
+                "", // reprompt — empty
+                csv_field(&meta.url),
+                csv_field(&meta.username),
+                csv_field(&secret.password),
+                "", // login_totp — empty
+            );
+            rows.push(row);
+            // `secret_plain_bytes` (Zeroizing) drops here, wiping the cleartext
+            // password before the next iteration.
+        }
+
+        let csv = rows.join("\n") + "\n";
+
+        // Write via fs_secure for best-effort owner-only permissions.
+        fs_secure::secure_write(path, csv.as_bytes())
+            .map_err(|e| AppError::VaultError(format!("Failed to write export file: {e}")))?;
+
+        Ok(self.entries.len())
+    }
+
+    /// Import entries from a file at `path`. The store MUST already be unlocked.
+    ///
+    /// Auto-detects the format by file extension:
+    /// - `.json` → Bitwarden JSON export (`{items:[...], folders:[...]}`)
+    /// - `.csv`  → Bitwarden CSV (same columns as `export_to_csv`)
+    ///
+    /// Only `type == 1` (login) items are imported from JSON exports.
+    /// Returns the number of entries added.
+    pub fn import_from_file(&mut self, path: &std::path::Path) -> Result<usize, AppError> {
+        // Guard: store must be unlocked (we will call add() for each entry).
+        if !self.is_unlocked() {
+            return Err(AppError::VaultLocked);
+        }
+
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
+        let contents = std::fs::read_to_string(path)
+            .map_err(|e| AppError::VaultError(format!("Failed to read import file: {e}")))?;
+
+        let entries: Vec<PasswordEntryInput> = match ext.as_str() {
+            "json" => parse_bitwarden_json(&contents)?,
+            "csv" => parse_bitwarden_csv(&contents)?,
+            other => {
+                return Err(AppError::VaultError(format!(
+                    "Unsupported import format: .{other} (expected .json or .csv)"
+                )))
+            }
+        };
+
+        let count = entries.len();
+        for input in &entries {
+            self.add(input)?;
+        }
+        Ok(count)
+    }
+}
+
+// ─── CSV helpers ────────────────────────────────────────
+
+/// Wrap a field value for CSV: if it contains a comma, double-quote, or
+/// newline it must be quoted; embedded double-quotes are escaped as `""`.
+///
+/// RFC 4180 compliant.
+fn csv_field(value: &str) -> String {
+    if value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r') {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_string()
+    }
+}
+
+/// Parse a CSV line, respecting RFC 4180 quoting.
+/// Returns a `Vec` of field strings (may be empty strings for empty fields).
+fn parse_csv_line(line: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut chars = line.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match (in_quotes, ch) {
+            (false, ',') => {
+                fields.push(current.clone());
+                current.clear();
+            }
+            (false, '"') => {
+                in_quotes = true;
+            }
+            (true, '"') => {
+                if chars.peek() == Some(&'"') {
+                    // Escaped double-quote: consume the second one.
+                    chars.next();
+                    current.push('"');
+                } else {
+                    in_quotes = false;
+                }
+            }
+            _ => current.push(ch),
+        }
+    }
+    fields.push(current);
+    fields
+}
+
+/// Parse a Bitwarden CSV export into a list of `PasswordEntryInput`.
+///
+/// Expects the header:
+///   folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp
+///
+/// Rows where `type != login` are skipped. Rows where `name` is empty are
+/// skipped silently.
+fn parse_bitwarden_csv(contents: &str) -> Result<Vec<PasswordEntryInput>, AppError> {
+    let mut lines = contents.lines();
+
+    // Consume (and validate) the header row.
+    let header = lines
+        .next()
+        .ok_or_else(|| AppError::VaultError("Empty CSV file".to_string()))?;
+    let header_fields = parse_csv_line(header);
+
+    // Build a name → column-index map so we are robust to column reordering.
+    let col = |name: &str| -> Option<usize> {
+        header_fields.iter().position(|h| h.trim() == name)
+    };
+
+    let col_folder = col("folder");
+    let col_type = col("type");
+    let col_name = col("name");
+    let col_notes = col("notes");
+    let col_uri = col("login_uri");
+    let col_username = col("login_username");
+    let col_password = col("login_password");
+
+    // `name` column is the only required one.
+    let col_name = col_name
+        .ok_or_else(|| AppError::VaultError("CSV missing required 'name' column".to_string()))?;
+
+    let mut entries = Vec::new();
+    for (row_num, line) in lines.enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let fields = parse_csv_line(line);
+        let get = |idx: Option<usize>| -> &str {
+            idx.and_then(|i| fields.get(i).map(|s| s.as_str()))
+                .unwrap_or("")
+        };
+
+        // Skip non-login rows (type column absent → assume login).
+        if let Some(t) = col_type {
+            let type_val = get(Some(t));
+            if !type_val.is_empty() && type_val != "login" {
+                continue;
+            }
+        }
+
+        let name = get(Some(col_name)).to_string();
+        if name.is_empty() {
+            tracing::debug!("CSV row {row_num}: skipped (empty name)");
+            continue;
+        }
+
+        entries.push(PasswordEntryInput {
+            title: name,
+            username: get(col_username).to_string(),
+            url: get(col_uri).to_string(),
+            category: get(col_folder).to_string(),
+            notes: get(col_notes).to_string(),
+            password: get(col_password).to_string(),
+        });
+    }
+
+    Ok(entries)
+}
+
+// ─── Bitwarden JSON import ───────────────────────────────
+
+/// Minimal shape of a Bitwarden JSON export that we care about.
+///
+/// The real Bitwarden export is more complex; we only need the fields we
+/// actually import. `serde(default)` covers missing optional fields.
+#[derive(Deserialize)]
+struct BitwardenExport {
+    #[serde(default)]
+    items: Vec<BitwardenItem>,
+    #[serde(default)]
+    folders: Vec<BitwardenFolder>,
+}
+
+#[derive(Deserialize)]
+struct BitwardenItem {
+    /// Bitwarden item type: 1 = Login, 2 = SecureNote, 3 = Card, 4 = Identity.
+    #[serde(rename = "type")]
+    item_type: u32,
+    name: String,
+    #[serde(default)]
+    notes: Option<String>,
+    #[serde(rename = "folderId", default)]
+    folder_id: Option<String>,
+    login: Option<BitwardenLogin>,
+}
+
+#[derive(Deserialize)]
+struct BitwardenLogin {
+    #[serde(default)]
+    username: Option<String>,
+    #[serde(default)]
+    password: Option<String>,
+    #[serde(default)]
+    uris: Vec<BitwardenUri>,
+}
+
+#[derive(Deserialize)]
+struct BitwardenUri {
+    uri: String,
+}
+
+#[derive(Deserialize)]
+struct BitwardenFolder {
+    id: String,
+    name: String,
+}
+
+/// Parse a Bitwarden JSON export (`{items:[...], folders:[...]}`) into a list
+/// of `PasswordEntryInput`. Only `type == 1` (Login) items are imported.
+fn parse_bitwarden_json(contents: &str) -> Result<Vec<PasswordEntryInput>, AppError> {
+    let export: BitwardenExport = serde_json::from_str(contents)
+        .map_err(|e| AppError::VaultError(format!("Invalid Bitwarden JSON: {e}")))?;
+
+    // Build folder id → name map.
+    let folder_map: std::collections::HashMap<&str, &str> = export
+        .folders
+        .iter()
+        .map(|f| (f.id.as_str(), f.name.as_str()))
+        .collect();
+
+    let mut entries = Vec::new();
+    for item in &export.items {
+        // Only import Login items (type == 1).
+        if item.item_type != 1 {
+            continue;
+        }
+        let title = item.name.clone();
+        if title.is_empty() {
+            continue;
+        }
+
+        let login = item.login.as_ref();
+        let username = login
+            .and_then(|l| l.username.as_deref())
+            .unwrap_or("")
+            .to_string();
+        let password = login
+            .and_then(|l| l.password.as_deref())
+            .unwrap_or("")
+            .to_string();
+        let url = login
+            .and_then(|l| l.uris.first())
+            .map(|u| u.uri.as_str())
+            .unwrap_or("")
+            .to_string();
+        let category = item
+            .folder_id
+            .as_deref()
+            .and_then(|fid| folder_map.get(fid).copied())
+            .unwrap_or("")
+            .to_string();
+        let notes = item.notes.as_deref().unwrap_or("").to_string();
+
+        entries.push(PasswordEntryInput {
+            title,
+            username,
+            url,
+            category,
+            notes,
+            password,
+        });
+    }
+
+    Ok(entries)
 }
 
 // ─── Free functions ─────────────────────────────────────
@@ -1378,5 +1717,265 @@ mod tests {
         let a = generate_password(32, true, true, true);
         let b = generate_password(32, true, true, true);
         assert_ne!(a, b, "two OsRng-backed passwords must differ");
+    }
+
+    // ─── csv_field escaping ─────────────────────────────
+
+    #[test]
+    fn csv_field_plain_value_unquoted() {
+        assert_eq!(csv_field("hello"), "hello");
+        assert_eq!(csv_field(""), "");
+        assert_eq!(csv_field("simple"), "simple");
+    }
+
+    #[test]
+    fn csv_field_comma_triggers_quoting() {
+        assert_eq!(csv_field("a,b"), "\"a,b\"");
+    }
+
+    #[test]
+    fn csv_field_double_quote_escaped() {
+        assert_eq!(csv_field("say \"hi\""), "\"say \"\"hi\"\"\"");
+    }
+
+    #[test]
+    fn csv_field_newline_triggers_quoting() {
+        assert_eq!(csv_field("line1\nline2"), "\"line1\nline2\"");
+    }
+
+    // ─── parse_csv_line ─────────────────────────────────
+
+    #[test]
+    fn parse_csv_line_basic() {
+        let fields = parse_csv_line("a,b,c");
+        assert_eq!(fields, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn parse_csv_line_quoted_comma() {
+        let fields = parse_csv_line("a,\"b,c\",d");
+        assert_eq!(fields, vec!["a", "b,c", "d"]);
+    }
+
+    #[test]
+    fn parse_csv_line_escaped_double_quote() {
+        let fields = parse_csv_line("\"a\"\"b\",c");
+        assert_eq!(fields, vec!["a\"b", "c"]);
+    }
+
+    #[test]
+    fn parse_csv_line_empty_fields() {
+        let fields = parse_csv_line(",,,");
+        assert_eq!(fields, vec!["", "", "", ""]);
+    }
+
+    // ─── Export → CSV round-trip ─────────────────────────
+
+    #[test]
+    fn export_to_csv_produces_valid_bitwarden_header() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = PasswordStore::create(dir.path(), "master-password").unwrap();
+        store.add(&sample_input()).unwrap();
+
+        let csv_path = dir.path().join("export.csv");
+        let count = store
+            .export_to_csv(&csv_path, "master-password")
+            .unwrap();
+        assert_eq!(count, 1);
+
+        let contents = std::fs::read_to_string(&csv_path).unwrap();
+        let mut lines = contents.lines();
+        let header = lines.next().unwrap();
+        assert_eq!(
+            header,
+            "folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp"
+        );
+        // The data row should contain the entry fields.
+        let data = lines.next().unwrap();
+        assert!(data.contains("GitHub"), "title must appear in CSV row");
+        assert!(data.contains("octocat"), "username must appear in CSV row");
+        assert!(
+            data.contains("s3cr3t-p@ss"),
+            "password must appear in exported CSV"
+        );
+    }
+
+    #[test]
+    fn export_to_csv_rejects_wrong_master_password() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = PasswordStore::create(dir.path(), "master-password").unwrap();
+        store.add(&sample_input()).unwrap();
+
+        let csv_path = dir.path().join("export.csv");
+        let result = store.export_to_csv(&csv_path, "WRONG-PASSWORD");
+        assert!(
+            matches!(result, Err(AppError::VaultWrongPassword)),
+            "wrong master password must be rejected on export, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn export_to_csv_fails_when_locked() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = PasswordStore::create(dir.path(), "master-password").unwrap();
+        store.lock();
+        let csv_path = dir.path().join("export.csv");
+        let result = store.export_to_csv(&csv_path, "master-password");
+        // verify_password requires the store to be unlocked.
+        assert!(matches!(result, Err(AppError::VaultLocked)));
+    }
+
+    // ─── Import from CSV ────────────────────────────────
+
+    #[test]
+    fn import_from_csv_round_trips_export() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = PasswordStore::create(dir.path(), "master-password").unwrap();
+        store.add(&sample_input()).unwrap();
+
+        let csv_path = dir.path().join("export.csv");
+        store
+            .export_to_csv(&csv_path, "master-password")
+            .unwrap();
+
+        // Import into a fresh store.
+        let dir2 = tempfile::tempdir().unwrap();
+        let mut store2 = PasswordStore::create(dir2.path(), "master-password").unwrap();
+        let count = store2.import_from_file(&csv_path).unwrap();
+        assert_eq!(count, 1);
+
+        let list = store2.list().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].title, "GitHub");
+        assert_eq!(list[0].username, "octocat");
+        assert_eq!(list[0].url, "https://github.com");
+        assert_eq!(list[0].category, "dev");
+
+        let id = &list[0].id;
+        let pw = store2.reveal(id).unwrap();
+        assert_eq!(pw.as_str(), "s3cr3t-p@ss");
+    }
+
+    #[test]
+    fn import_from_csv_skips_non_login_type_rows() {
+        // A CSV with one login row and one 'card' row.
+        let csv = "folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp\n\
+                   ,,,Login1,,,,https://a.com,user1,pass1,\n\
+                   ,,,Card1,,,,,,,\n";
+
+        // We need to write to a temp file because import_from_file reads by path.
+        let dir = tempfile::tempdir().unwrap();
+        let csv_path = dir.path().join("test.csv");
+        std::fs::write(&csv_path, csv).unwrap();
+
+        // Build a CSV with the type column set explicitly.
+        let csv_typed = "folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp\n\
+                         ,,login,Login1,,,,https://a.com,user1,pass1,\n\
+                         ,,card,Card1,,,,,,,\n";
+        std::fs::write(&csv_path, csv_typed).unwrap();
+
+        let mut store = PasswordStore::create(dir.path(), "pw").unwrap();
+        let count = store.import_from_file(&csv_path).unwrap();
+        assert_eq!(count, 1, "card row must be skipped");
+        assert_eq!(store.list().unwrap()[0].title, "Login1");
+    }
+
+    #[test]
+    fn import_from_csv_fails_when_locked() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = PasswordStore::create(dir.path(), "master-password").unwrap();
+        store.lock();
+        let csv_path = dir.path().join("dummy.csv");
+        // File doesn't need to exist — lock check comes first.
+        let result = store.import_from_file(&csv_path);
+        assert!(matches!(result, Err(AppError::VaultLocked)));
+    }
+
+    // ─── Import from Bitwarden JSON ─────────────────────
+
+    #[test]
+    fn import_from_bitwarden_json_parses_login_items() {
+        let json = r#"{
+            "folders": [{"id": "f1", "name": "Work"}],
+            "items": [
+                {
+                    "type": 1,
+                    "name": "GitHub",
+                    "folderId": "f1",
+                    "notes": "personal",
+                    "login": {
+                        "username": "octocat",
+                        "password": "s3cr3t",
+                        "uris": [{"uri": "https://github.com"}]
+                    }
+                },
+                {
+                    "type": 2,
+                    "name": "SecureNote",
+                    "notes": "note text",
+                    "login": null
+                }
+            ]
+        }"#;
+
+        let dir = tempfile::tempdir().unwrap();
+        let json_path = dir.path().join("bw.json");
+        std::fs::write(&json_path, json).unwrap();
+
+        let mut store = PasswordStore::create(dir.path(), "master-password").unwrap();
+        let count = store.import_from_file(&json_path).unwrap();
+        assert_eq!(count, 1, "SecureNote (type 2) must be skipped");
+
+        let list = store.list().unwrap();
+        assert_eq!(list[0].title, "GitHub");
+        assert_eq!(list[0].username, "octocat");
+        assert_eq!(list[0].url, "https://github.com");
+        assert_eq!(list[0].category, "Work");
+
+        let id = &list[0].id;
+        let pw = store.reveal(id).unwrap();
+        assert_eq!(pw.as_str(), "s3cr3t");
+    }
+
+    #[test]
+    fn import_rejects_unknown_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let bad_path = dir.path().join("data.xml");
+        std::fs::write(&bad_path, "<xml/>").unwrap();
+        let mut store = PasswordStore::create(dir.path(), "master-password").unwrap();
+        let result = store.import_from_file(&bad_path);
+        assert!(matches!(result, Err(AppError::VaultError(_))));
+    }
+
+    #[test]
+    fn import_csv_with_commas_in_fields_round_trips() {
+        // A password and notes containing commas — must be quoted in the CSV.
+        let input = PasswordEntryInput {
+            title: "Site, Inc.".to_string(),
+            username: "user@example.com".to_string(),
+            url: "https://site.com".to_string(),
+            category: "Work, Dev".to_string(),
+            notes: "Notes with, commas and \"quotes\"".to_string(),
+            password: "p@ss,word".to_string(),
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = PasswordStore::create(dir.path(), "master-password").unwrap();
+        store.add(&input).unwrap();
+
+        let csv_path = dir.path().join("export.csv");
+        store.export_to_csv(&csv_path, "master-password").unwrap();
+
+        let dir2 = tempfile::tempdir().unwrap();
+        let mut store2 = PasswordStore::create(dir2.path(), "master-password").unwrap();
+        store2.import_from_file(&csv_path).unwrap();
+
+        let list = store2.list().unwrap();
+        assert_eq!(list[0].title, "Site, Inc.");
+        assert_eq!(list[0].category, "Work, Dev");
+
+        let id = &list[0].id;
+        let pw = store2.reveal(id).unwrap();
+        assert_eq!(pw.as_str(), "p@ss,word");
     }
 }

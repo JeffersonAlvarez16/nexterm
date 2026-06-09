@@ -116,6 +116,19 @@ interface PasswordStoreState {
     uppercase: boolean,
   ) => Promise<string>;
 
+  // ── Import / Export ──
+  /**
+   * Export all entries to a Bitwarden-compatible CSV at `path`.
+   * Requires master password re-authentication (enforced on the backend).
+   * Returns the number of entries written.
+   */
+  exportToFile: (path: string, masterPassword: string) => Promise<number>;
+  /**
+   * Import entries from a Bitwarden JSON or CSV file at `path`.
+   * The store must be unlocked. Returns the number of entries imported.
+   */
+  importFromFile: (path: string) => Promise<number>;
+
   clearError: () => void;
 }
 
@@ -345,6 +358,29 @@ export const usePasswordStore = create<PasswordStoreState>((set, get) => ({
         digits,
         uppercase,
       });
+    } catch (err) {
+      set({ error: String(err) });
+      throw err;
+    }
+  },
+
+  exportToFile: async (path: string, masterPassword: string) => {
+    set({ error: null });
+    try {
+      return await tauriInvoke<number>("pw_export_to_file", { path, masterPassword });
+    } catch (err) {
+      set({ error: String(err) });
+      throw err;
+    }
+  },
+
+  importFromFile: async (path: string) => {
+    set({ error: null });
+    try {
+      const count = await tauriInvoke<number>("pw_import_from_file", { path });
+      // Refresh the entry list so the UI reflects the newly imported entries.
+      await get().list();
+      return count;
     } catch (err) {
       set({ error: String(err) });
       throw err;

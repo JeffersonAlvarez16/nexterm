@@ -709,6 +709,21 @@ export const es: Record<TranslationKey, string> = {
   "passwords.secret.fieldNewNotes": "Notas (reemplazan las existentes)",
   "passwords.secret.save": "Reemplazar contraseña",
 
+  // ── Exportar / Importar ──
+  "passwords.export": "Exportar",
+  "passwords.import": "Importar",
+  "passwords.exportTitle": "Exportar Contraseñas",
+  "passwords.exportWarning":
+    "El archivo CSV exportado contendrá TODAS tus contraseñas en texto plano. " +
+    "Guardalo en un lugar seguro y eliminalo cuando ya no lo necesites.",
+  "passwords.exportMasterLabel": "Contraseña maestra (requerida para exportar)",
+  "passwords.exportMasterPlaceholder": "Ingresá tu contraseña maestra",
+  "passwords.exportConfirm": "Exportar a CSV",
+  "passwords.exportSuccess": "{count} contraseñas exportadas a CSV",
+  "passwords.importSuccess": "{count} contraseñas importadas",
+  "passwords.importError": "Error al importar contraseñas",
+  "passwords.exportError": "Error al exportar contraseñas",
+
   // ── Ajustes (cambiar maestra + tiempo de inactividad) ──
   "passwords.settings.title": "Ajustes del Gestor de Contraseñas",
   "passwords.settings.open": "Ajustes",

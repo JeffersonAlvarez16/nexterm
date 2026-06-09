@@ -189,4 +189,57 @@ describe("passwordStore", () => {
     expect(state.unlocked).toBe(false);
     expect(state.entries).toEqual([]);
   });
+
+  // ── exportToFile ──────────────────────────────────────────────────────────────
+
+  it("exportToFile() invokes pw_export_to_file with path and masterPassword", async () => {
+    mockTauriInvoke.mockResolvedValueOnce(5); // pw_export_to_file
+
+    const count = await usePasswordStore.getState().exportToFile("/tmp/out.csv", "master-pw");
+
+    expect(count).toBe(5);
+    expect(mockTauriInvoke).toHaveBeenCalledWith("pw_export_to_file", {
+      path: "/tmp/out.csv",
+      masterPassword: "master-pw",
+    });
+  });
+
+  it("exportToFile() surfaces backend errors via the error field and rethrows", async () => {
+    mockTauriInvoke.mockRejectedValueOnce(new Error("VaultWrongPassword"));
+
+    await expect(
+      usePasswordStore.getState().exportToFile("/tmp/out.csv", "wrong"),
+    ).rejects.toThrow();
+
+    expect(usePasswordStore.getState().error).not.toBeNull();
+  });
+
+  // ── importFromFile ────────────────────────────────────────────────────────────
+
+  it("importFromFile() invokes pw_import_from_file and refreshes the list", async () => {
+    mockTauriInvoke
+      .mockResolvedValueOnce(3) // pw_import_from_file
+      .mockResolvedValueOnce([META]); // pw_list (triggered by importFromFile)
+
+    const count = await usePasswordStore.getState().importFromFile("/tmp/bw.json");
+
+    expect(count).toBe(3);
+    expect(mockTauriInvoke).toHaveBeenCalledWith("pw_import_from_file", {
+      path: "/tmp/bw.json",
+    });
+    // The list refresh must have been called.
+    expect(mockTauriInvoke).toHaveBeenCalledWith("pw_list");
+    // Store entries must be refreshed.
+    expect(usePasswordStore.getState().entries).toEqual([META]);
+  });
+
+  it("importFromFile() surfaces backend errors via the error field and rethrows", async () => {
+    mockTauriInvoke.mockRejectedValueOnce(new Error("VaultLocked"));
+
+    await expect(
+      usePasswordStore.getState().importFromFile("/tmp/bw.json"),
+    ).rejects.toThrow();
+
+    expect(usePasswordStore.getState().error).not.toBeNull();
+  });
 });

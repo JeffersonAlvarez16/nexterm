@@ -271,6 +271,8 @@ pub fn run() {
             commands::passwords::pw_reauth,
             commands::passwords::pw_reveal,
             commands::passwords::pw_generate,
+            commands::passwords::pw_export_to_file,
+            commands::passwords::pw_import_from_file,
             // Connection
             commands::connection::connect,
             commands::connection::disconnect,

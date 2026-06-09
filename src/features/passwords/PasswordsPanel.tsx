@@ -11,10 +11,12 @@
 // cleared on unmount, lock, and section switch (which unmounts this panel).
 
 import { useCallback, useEffect, useState } from "react";
+import { save, open } from "@tauri-apps/plugin-dialog";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { Spinner } from "../../components/ui/Spinner";
 import { PasswordStrength } from "../vault/PasswordStrength";
+import { Dialog } from "../../components/ui/Dialog";
 import { useI18n } from "../../lib/i18n";
 import {
   usePasswordStore,
@@ -40,6 +42,8 @@ export function PasswordsPanel() {
   const refreshStatus = usePasswordStore((s) => s.refreshStatus);
   const create = usePasswordStore((s) => s.create);
   const lock = usePasswordStore((s) => s.lock);
+  const exportToFile = usePasswordStore((s) => s.exportToFile);
+  const importFromFile = usePasswordStore((s) => s.importFromFile);
 
   const [bootstrapping, setBootstrapping] = useState(true);
 
@@ -60,6 +64,15 @@ export function PasswordsPanel() {
 
   // Settings dialog (change master + idle timeout).
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Export dialog state.
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportMasterPassword, setExportMasterPassword] = useState("");
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportLoading, setExportLoading] = useState(false);
+
+  // Inline banner (success/error toast).
+  const [banner, setBanner] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const handleCapsLock = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     setCapsLock(e.getModifierState("CapsLock"));
@@ -136,6 +149,66 @@ export function PasswordsPanel() {
   const handleLock = useCallback(() => {
     void lock();
   }, [lock]);
+
+  // Auto-dismiss banner after 4 s.
+  useEffect(() => {
+    if (!banner) return;
+    const id = setTimeout(() => setBanner(null), 4000);
+    return () => clearTimeout(id);
+  }, [banner]);
+
+  const openExportDialog = useCallback(() => {
+    setExportMasterPassword("");
+    setExportError(null);
+    setExportOpen(true);
+  }, []);
+
+  const closeExportDialog = useCallback(() => {
+    setExportOpen(false);
+    setExportMasterPassword("");
+    setExportError(null);
+  }, []);
+
+  const handleExportConfirm = useCallback(async () => {
+    if (!exportMasterPassword) {
+      setExportError(t("passwords.passwordRequired"));
+      return;
+    }
+    setExportError(null);
+    setExportLoading(true);
+    try {
+      const path = await save({
+        defaultPath: "nexterm-passwords.csv",
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
+      if (!path) {
+        setExportLoading(false);
+        return;
+      }
+      const count = await exportToFile(path, exportMasterPassword);
+      closeExportDialog();
+      setBanner({ type: "success", message: t("passwords.exportSuccess", { count }) });
+    } catch (err) {
+      setExportError(String(err));
+    } finally {
+      setExportLoading(false);
+    }
+  }, [exportMasterPassword, exportToFile, closeExportDialog, t]);
+
+  const handleImportClick = useCallback(async () => {
+    try {
+      const path = await open({
+        filters: [{ name: "Bitwarden", extensions: ["csv", "json"] }],
+        multiple: false,
+      });
+      if (!path) return;
+      const filePath = path as string;
+      const count = await importFromFile(filePath);
+      setBanner({ type: "success", message: t("passwords.importSuccess", { count }) });
+    } catch (err) {
+      setBanner({ type: "error", message: t("passwords.importError") });
+    }
+  }, [importFromFile, t]);
 
   const openAdd = useCallback(() => {
     setEditingEntry(null);
@@ -259,10 +332,34 @@ export function PasswordsPanel() {
   // 3) Unlocked -> list + add.
   return (
     <div className="pw-panel">
+      {banner && (
+        <div className={`pw-banner pw-banner-${banner.type}`} role="status">
+          {banner.message}
+        </div>
+      )}
+
       <div className="pw-panel-toolbar">
         <Button size="sm" onClick={openAdd}>
           {t("passwords.add")}
         </Button>
+        <button
+          type="button"
+          className="pw-toolbar-btn btn btn-ghost btn-sm"
+          onClick={openExportDialog}
+          aria-label={t("passwords.exportTitle")}
+          title={t("passwords.exportTitle")}
+        >
+          {t("passwords.export")}
+        </button>
+        <button
+          type="button"
+          className="pw-toolbar-btn btn btn-ghost btn-sm"
+          onClick={() => void handleImportClick()}
+          aria-label={t("passwords.import")}
+          title={t("passwords.import")}
+        >
+          {t("passwords.import")}
+        </button>
         <button
           type="button"
           className="pw-settings-btn btn btn-ghost btn-sm"
@@ -300,6 +397,60 @@ export function PasswordsPanel() {
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
       />
+
+      {/* Export dialog — requires master password re-auth + plaintext warning */}
+      <Dialog
+        open={exportOpen}
+        onClose={closeExportDialog}
+        title={t("passwords.exportTitle")}
+      >
+        <div className="pw-export-dialog">
+          <p className="pw-export-warning" role="alert">
+            {t("passwords.exportWarning")}
+          </p>
+
+          <Input
+            id="pw-export-master"
+            type="password"
+            label={t("passwords.exportMasterLabel")}
+            value={exportMasterPassword}
+            onChange={(e) => {
+              setExportMasterPassword(e.target.value);
+              setExportError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void handleExportConfirm();
+            }}
+            placeholder={t("passwords.exportMasterPlaceholder")}
+            reveal
+            revealLabel={t("passwords.reveal")}
+            hideLabel={t("passwords.hide")}
+            autoFocus
+          />
+
+          {exportError && (
+            <p className="pw-error" role="alert">
+              {exportError}
+            </p>
+          )}
+
+          <div className="pw-dialog-actions">
+            <Button
+              variant="ghost"
+              onClick={closeExportDialog}
+              disabled={exportLoading}
+            >
+              {t("general.cancel")}
+            </Button>
+            <Button
+              onClick={() => void handleExportConfirm()}
+              disabled={exportLoading || !exportMasterPassword}
+            >
+              {exportLoading ? <Spinner size={14} /> : t("passwords.exportConfirm")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }

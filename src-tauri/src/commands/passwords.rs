@@ -462,6 +462,105 @@ pub async fn pw_reveal(state: State<'_, AppState>, id: String) -> Result<String,
     Ok(password)
 }
 
+// ─── Export / Import ────────────────────────────────────
+
+/// Export all password entries to a Bitwarden-compatible CSV file at `path`.
+///
+/// Requires re-authentication: the master password is verified inside
+/// `PasswordStore::export_to_csv` before any secret blob is decrypted.
+/// The store MUST be unlocked.
+///
+/// The store is taken out of its slot (same pattern as `pw_change_master`) so
+/// the Argon2id key comparison AND the file write both run on a blocking thread
+/// without holding the async mutex and without stalling other `pw_*` commands.
+///
+/// Returns the number of entries written to the CSV.
+#[tauri::command]
+pub async fn pw_export_to_file(
+    state: State<'_, AppState>,
+    path: String,
+    master_password: String,
+) -> Result<usize, AppError> {
+    // Take the store out of its slot so we can move it to the blocking thread.
+    let store = {
+        let mut guard = state.passwords.lock().await;
+        guard.take().ok_or(AppError::VaultLocked)?
+    };
+
+    let path_obj = std::path::PathBuf::from(path);
+
+    let result = tokio::task::spawn_blocking(move || {
+        let res = store.export_to_csv(&path_obj, &master_password);
+        (store, res)
+    })
+    .await;
+
+    let (store, res) = match result {
+        Ok(pair) => pair,
+        Err(e) => {
+            // Blocking task panicked — store is lost. Slot stays empty (locked).
+            return Err(AppError::VaultError(format!("Export task failed: {e}")));
+        }
+    };
+
+    // Reinstate the store regardless of export outcome.
+    let mut guard = state.passwords.lock().await;
+    *guard = Some(store);
+    drop(guard);
+
+    let count = res?;
+    state.passwords_auto_lock.record_activity();
+    Ok(count)
+}
+
+/// Import entries from a file at `path` into the unlocked password store.
+///
+/// Auto-detects format by extension: `.json` (Bitwarden JSON) or `.csv`
+/// (Bitwarden CSV). The store MUST be unlocked — each imported entry is added
+/// via the existing encrypted-add path and persisted to disk.
+///
+/// The store is taken out of its slot (same pattern as `pw_change_master`) so
+/// the file I/O and per-entry encryption run on a blocking thread without
+/// holding the async mutex.
+///
+/// Returns the number of entries imported.
+#[tauri::command]
+pub async fn pw_import_from_file(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<usize, AppError> {
+    let path_obj = std::path::PathBuf::from(path);
+
+    // Take the store out of the slot so we can move it into the blocking task.
+    let mut store = {
+        let mut guard = state.passwords.lock().await;
+        guard.take().ok_or(AppError::VaultLocked)?
+    };
+
+    let result = tokio::task::spawn_blocking(move || {
+        let res = store.import_from_file(&path_obj);
+        (store, res)
+    })
+    .await;
+
+    let (store, res) = match result {
+        Ok(pair) => pair,
+        Err(e) => {
+            // Blocking task panicked — store is lost, slot stays empty.
+            return Err(AppError::VaultError(format!("Import task failed: {e}")));
+        }
+    };
+
+    // Reinstate the store regardless of import outcome.
+    let mut guard = state.passwords.lock().await;
+    *guard = Some(store);
+    drop(guard);
+
+    let count = res?;
+    state.passwords_auto_lock.record_activity();
+    Ok(count)
+}
+
 // ─── Generator ──────────────────────────────────────────
 
 /// Generate a random password with `OsRng`. Stateless — does not touch the
