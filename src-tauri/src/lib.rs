@@ -206,11 +206,12 @@ pub fn run() {
             // currently-revealed secret in the UI.
             {
                 use tauri::{Emitter, Manager};
+                let app_handle = app.handle().clone();
                 if let Some(window) = app.get_webview_window("main") {
                     let grant = Arc::clone(&pw_reveal_grant_blur);
                     let emit_window = window.clone();
-                    window.on_window_event(move |event| {
-                        if let tauri::WindowEvent::Focused(false) = event {
+                    window.on_window_event(move |event| match event {
+                        tauri::WindowEvent::Focused(false) => {
                             *grant.lock().unwrap() = None;
                             tracing::info!("Window lost focus — cleared password reveal grant");
                             // Best-effort UI notification; ignore emit errors
@@ -218,6 +219,16 @@ pub fn run() {
                             // cleared, which is the security-critical part.
                             let _ = emit_window.emit("pw-focus-lost", ());
                         }
+                        // macOS keeps the process alive when the last window is
+                        // closed (dock convention). NexTerm is a single-window
+                        // app, so closing the window (red traffic-light / Cmd-W)
+                        // must quit the whole app instead of leaving a headless
+                        // process holding the single-instance lock.
+                        tauri::WindowEvent::CloseRequested { .. } => {
+                            tracing::info!("Main window close requested — exiting app");
+                            app_handle.exit(0);
+                        }
+                        _ => {}
                     });
                 }
             }
