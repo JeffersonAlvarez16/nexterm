@@ -24,7 +24,6 @@ import { HistoryPanel } from "../../features/history/HistoryPanel";
 import { MonitoringPanel } from "../../features/monitoring/MonitoringPanel";
 import { DockerPanel } from "../../features/docker/DockerPanel";
 import { ProxmoxPanel } from "../../features/proxmox/ProxmoxPanel";
-import { PasswordsPanel } from "../../features/passwords/PasswordsPanel";
 import type { PanelSection } from "../../stores/workspaceStore";
 
 // ── SVG icons (inline, no external dep) ─────────────────────────────────────
@@ -241,49 +240,6 @@ function ProxmoxIcon() {
   );
 }
 
-function PasswordsIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      aria-hidden="true"
-    >
-      {/* Padlock body */}
-      <rect
-        x="3"
-        y="7"
-        width="10"
-        height="7"
-        rx="1"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        fill="none"
-      />
-      {/* Shackle */}
-      <path
-        d="M5 7V5a3 3 0 0 1 6 0v2"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeLinecap="round"
-        fill="none"
-      />
-      {/* Keyhole */}
-      <circle cx="8" cy="10" r="1" stroke="currentColor" strokeWidth="1.1" fill="none" />
-      <line
-        x1="8"
-        y1="11"
-        x2="8"
-        y2="12.2"
-        stroke="currentColor"
-        strokeWidth="1.1"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
 function CloseIcon() {
   return (
     <svg
@@ -340,19 +296,11 @@ export function SidePanel() {
   const setPanelWidth = useWorkspaceStore((s) => s.setPanelWidth);
   const setMainView = useWorkspaceStore((s) => s.setMainView);
 
-  // ── App-global passwords panel ──────────────────────────────────────────────
-  // The password manager is session-independent: it can be opened with ZERO SSH
-  // sessions active. Its open/closed state therefore lives in a GLOBAL store
-  // slice, NOT in the per-workspace map keyed by `workspaceKey`.
-  const passwordsPanelOpen = useWorkspaceStore((s) => s.passwordsPanelOpen);
-  const setPasswordsPanelOpen = useWorkspaceStore((s) => s.setPasswordsPanelOpen);
-
   const sessionId = activeSession?.id ?? "";
 
-  // The pane is open when either an SSH-scoped section is open OR the global
-  // passwords panel is open. When passwords is open it is the visible section.
-  const isPasswordsActive = passwordsPanelOpen;
-  const contentOpen = panelOpen || passwordsPanelOpen;
+  // This rail is now exclusively SSH-scoped. The independent password manager is
+  // a top-level section (left-sidebar entry → full-screen view), NOT docked here.
+  const contentOpen = panelOpen;
 
   // ── Resize handle state ──────────────────────────────────────────────────────
   // isDragging suppresses the width CSS transition while drag is in progress so
@@ -400,27 +348,12 @@ export function SidePanel() {
 
   function handleToggle(section: "tunnel" | "history" | "monitoring" | "docker" | "proxmox") {
     if (!workspaceKey) return;
-    const isActive = panelOpen && panelSection === section && !passwordsPanelOpen;
+    const isActive = panelOpen && panelSection === section;
     if (isActive) {
       setPanelOpen(workspaceKey, false);
     } else {
-      // Opening an SSH-scoped section takes over the single pane: close the
-      // global passwords panel so only one section is visible at a time.
-      if (passwordsPanelOpen) setPasswordsPanelOpen(false);
       setPanelSection(workspaceKey, section);
       setPanelOpen(workspaceKey, true);
-    }
-  }
-
-  // Passwords is GLOBAL: it toggles independently of workspaceKey and must work
-  // with zero active SSH sessions. Opening it makes it the visible section and
-  // closes any open SSH-scoped section so the single pane shows one thing.
-  function handlePasswordsToggle() {
-    if (passwordsPanelOpen) {
-      setPasswordsPanelOpen(false);
-    } else {
-      if (panelOpen && workspaceKey) setPanelOpen(workspaceKey, false);
-      setPasswordsPanelOpen(true);
     }
   }
 
@@ -430,17 +363,12 @@ export function SidePanel() {
   }
 
   function handleClose() {
-    if (passwordsPanelOpen) {
-      setPasswordsPanelOpen(false);
-      return;
-    }
     if (!workspaceKey) return;
     setPanelOpen(workspaceKey, false);
   }
 
-  // An SSH section is visible only when the workspace panel is open AND the
-  // global passwords panel is NOT taking over the single pane.
-  const sshSectionActive = panelOpen && !passwordsPanelOpen;
+  // An SSH section is visible when the workspace panel is open.
+  const sshSectionActive = panelOpen;
 
   return (
     <div className="side-panel-wrapper" data-open={contentOpen}>
@@ -515,17 +443,6 @@ export function SidePanel() {
         >
           <ProxmoxIcon />
         </button>
-
-        <button
-          type="button"
-          aria-pressed={isPasswordsActive}
-          aria-label={t("panel.passwords")}
-          className={`side-panel-rail-btn${isPasswordsActive ? " side-panel-rail-btn-active" : ""}`}
-          onClick={handlePasswordsToggle}
-          title={t("panel.passwords")}
-        >
-          <PasswordsIcon />
-        </button>
       </div>
 
       {/* Collapsible content pane */}
@@ -559,17 +476,15 @@ export function SidePanel() {
             {/* Header with close button */}
             <div className="side-panel-header">
               <span className="side-panel-title">
-                {isPasswordsActive
-                  ? t("panel.passwords")
-                  : panelSection === "history"
-                    ? t("panel.history")
-                    : panelSection === "monitoring"
-                      ? t("panel.monitoring")
-                      : panelSection === "docker"
-                        ? t("panel.docker")
-                        : panelSection === "proxmox"
-                          ? t("panel.proxmox")
-                          : t("panel.tunnels")}
+                {panelSection === "history"
+                  ? t("panel.history")
+                  : panelSection === "monitoring"
+                    ? t("panel.monitoring")
+                    : panelSection === "docker"
+                      ? t("panel.docker")
+                      : panelSection === "proxmox"
+                        ? t("panel.proxmox")
+                        : t("panel.tunnels")}
               </span>
               <button
                 type="button"
@@ -581,33 +496,26 @@ export function SidePanel() {
               </button>
             </div>
 
-            {/* Content — single pane. Passwords (global) takes precedence;
-               otherwise the active SSH-scoped section is shown. */}
+            {/* Content — single pane showing the active SSH-scoped section. */}
             <div className="side-panel-body">
-              {isPasswordsActive ? (
-                <PasswordsPanel />
-              ) : (
-                <>
-                  {panelSection === "tunnel" && sessionId && (
-                    <TunnelManager sessionId={sessionId} />
-                  )}
-                  {panelSection === "history" && sessionId && (
-                    <HistoryPanel
-                      sessionId={sessionId}
-                      terminalId={activeSession?.activeTerminalId ?? null}
-                      host={activeSession?.host ?? ""}
-                    />
-                  )}
-                  {panelSection === "monitoring" && sessionId && (
-                    <MonitoringPanel sessionId={sessionId} />
-                  )}
-                  {panelSection === "docker" && sessionId && (
-                    <DockerPanel sessionId={sessionId} />
-                  )}
-                  {panelSection === "proxmox" && sessionId && (
-                    <ProxmoxPanel sessionId={sessionId} />
-                  )}
-                </>
+              {panelSection === "tunnel" && sessionId && (
+                <TunnelManager sessionId={sessionId} />
+              )}
+              {panelSection === "history" && sessionId && (
+                <HistoryPanel
+                  sessionId={sessionId}
+                  terminalId={activeSession?.activeTerminalId ?? null}
+                  host={activeSession?.host ?? ""}
+                />
+              )}
+              {panelSection === "monitoring" && sessionId && (
+                <MonitoringPanel sessionId={sessionId} />
+              )}
+              {panelSection === "docker" && sessionId && (
+                <DockerPanel sessionId={sessionId} />
+              )}
+              {panelSection === "proxmox" && sessionId && (
+                <ProxmoxPanel sessionId={sessionId} />
               )}
             </div>
           </section>

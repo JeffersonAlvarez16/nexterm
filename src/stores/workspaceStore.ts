@@ -5,7 +5,7 @@ import { persist } from "zustand/middleware";
 import type { SearchMode } from "../features/sftp/FilePane";
 import type { TerminalId } from "../lib/types";
 
-export type PanelSection = "sftp" | "tunnel" | "history" | "monitoring" | "docker" | "proxmox" | "passwords" | null;
+export type PanelSection = "sftp" | "tunnel" | "history" | "monitoring" | "docker" | "proxmox" | null;
 export type MainView = "terminal" | "files" | "editor";
 
 export interface WorkspacePaneSnapshot {
@@ -42,11 +42,12 @@ export const PANEL_WIDTH_DEFAULT = 420;
 interface WorkspaceStoreState {
   workspaces: Record<string, WorkspaceSnapshot>;
   // App-global (NOT per-workspace) state for the independent password manager.
-  // The password manager is reachable with zero SSH sessions, so its open/closed
-  // state must live outside the per-workspace map (which is keyed by an active
-  // session's profile/user).
-  passwordsPanelOpen: boolean;
-  setPasswordsPanelOpen: (open: boolean) => void;
+  // The password manager is a top-level section reachable with zero SSH sessions,
+  // so its open/closed state must live outside the per-workspace map (which is
+  // keyed by an active session's profile/user). When open it takes over the main
+  // content area as a full-screen view — it is NOT docked in the per-session rail.
+  passwordsViewOpen: boolean;
+  setPasswordsViewOpen: (open: boolean) => void;
   getOrCreateWorkspace: (profileId: string, userId: string) => WorkspaceSnapshot;
   setActiveTerminalId: (
     workspaceKey: string,
@@ -119,9 +120,9 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
     (set, get) => ({
       workspaces: {},
 
-      passwordsPanelOpen: false,
+      passwordsViewOpen: false,
 
-      setPasswordsPanelOpen: (open) => set({ passwordsPanelOpen: open }),
+      setPasswordsViewOpen: (open) => set({ passwordsViewOpen: open }),
 
       getOrCreateWorkspace: (profileId, userId) => {
         const key = buildWorkspaceKey(profileId, userId);
@@ -248,9 +249,11 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
     }),
     {
       name: "nexterm-workspaces",
+      // passwordsViewOpen is intentionally NOT persisted: the password manager is
+      // opened on demand, so the app always starts on the connections view, never
+      // cold-starting into the passwords section.
       partialize: (state) => ({
         workspaces: state.workspaces,
-        passwordsPanelOpen: state.passwordsPanelOpen,
       }),
     },
   ),

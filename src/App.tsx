@@ -23,6 +23,7 @@ import {
 	DYNAMIC_VAR_NAMES,
 } from "./features/snippets/resolveSessionVars";
 import { VaultScreen } from "./features/vault/VaultScreen";
+import { PasswordsPanel } from "./features/passwords/PasswordsPanel";
 import { UpdateDialog } from "./features/updater/UpdateDialog";
 import { CriticalUpdateScreen } from "./features/updater/CriticalUpdateScreen";
 import { TerminalTabs } from "./features/terminal/TerminalTabs";
@@ -274,6 +275,12 @@ function App() {
 		useSessionStore();
 	const { profiles } = useProfileStore();
 
+	// App-global passwords section. When open it takes over the main content
+	// area as a full-screen view, independent of any SSH session. Navigating to
+	// a connection (connect / open dialog-connect) closes it.
+	const passwordsViewOpen = useWorkspaceStore((s) => s.passwordsViewOpen);
+	const setPasswordsViewOpen = useWorkspaceStore((s) => s.setPasswordsViewOpen);
+
 	// ── Vault state ──────────────────────────────────────
 	const [vaultReady, setVaultReady] = useState(false);
 	const [vaultStatus, setVaultStatus] = useState<VaultStatus | null>(null);
@@ -393,16 +400,18 @@ function App() {
 
 	const handleConnect = useCallback(
 		(profileId: string, userId?: string) => {
+			setPasswordsViewOpen(false);
 			void connect(profileId, undefined, userId);
 		},
-		[connect],
+		[connect, setPasswordsViewOpen],
 	);
 
 	const handleSaveAndConnect = useCallback(
 		(profileId: string, password?: string, userId?: string) => {
+			setPasswordsViewOpen(false);
 			void connect(profileId, password, userId);
 		},
-		[connect],
+		[connect, setPasswordsViewOpen],
 	);
 
 	const handleDisconnect = useCallback(
@@ -508,7 +517,13 @@ function App() {
 				onStartTour={handleStartTour}
 			>
 				{/* Content area */}
-				{activeSession ? (
+				{passwordsViewOpen ? (
+					/* Top-level password manager: a full-screen section that takes over
+					   the main content area, independent of any SSH session. */
+					<div className="passwords-view">
+						<PasswordsPanel />
+					</div>
+				) : activeSession ? (
 					<div className="session-view">
 						<div className="session-content">
 							{/* Main column — persistent toggle bar + terminal/files areas */}
@@ -552,10 +567,10 @@ function App() {
 						</div>
 					</div>
 				) : (
-					/* No active SSH session: the launchpad fills the main area, but the
-					   SidePanel rail still docks on the right so the session-independent
-					   password manager (padlock affordance + PasswordsPanel drawer)
-					   remains reachable with zero sessions. */
+					/* No active SSH session: the launchpad fills the main area. The
+					   per-session SidePanel rail is omitted here — it has nothing
+					   session-scoped to show. The password manager now lives as a
+					   top-level section reachable from the left sidebar. */
 					<div className="session-view">
 						<div className="session-content">
 							<div className="session-main">
@@ -569,7 +584,6 @@ function App() {
 									profiles={profiles}
 								/>
 							</div>
-							<SidePanel />
 						</div>
 					</div>
 				)}

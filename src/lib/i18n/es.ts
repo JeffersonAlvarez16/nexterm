@@ -622,6 +622,8 @@ export const es: Record<TranslationKey, string> = {
 
   // Side panel — passwords section
   "panel.passwords": "Contraseñas",
+  // Left sidebar — top-level passwords section entry
+  "sidebar.passwords": "Contraseñas",
 
   // Password manager (independent second vault)
   "passwords.title": "Gestor de Contraseñas",
@@ -645,6 +647,8 @@ export const es: Record<TranslationKey, string> = {
   "passwords.deleteConfirm": "Confirmar eliminación",
   "passwords.empty": "Aún no hay contraseñas guardadas",
   "passwords.emptyHint": "Hacé clic en Agregar Contraseña para guardar la primera",
+  "passwords.search": "Buscar contraseñas",
+  "passwords.noResults": "Ninguna contraseña coincide con la búsqueda",
   "passwords.passwordRequired": "La contraseña es requerida",
   "passwords.passwordTooShort": "Usá al menos {min} caracteres",
   "passwords.passwordMismatch": "Las contraseñas no coinciden",

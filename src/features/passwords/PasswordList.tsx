@@ -17,7 +17,7 @@
 // for the single row being revealed and is wiped on hide, on row change, on
 // edit/delete, and on unmount. Nothing secret is ever pushed into the store.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Dialog } from "../../components/ui/Dialog";
 import { Input } from "../../components/ui/Input";
@@ -29,6 +29,7 @@ import {
   usePasswordStore,
   type PasswordEntryMeta,
 } from "../../stores/passwordStore";
+import { filterPasswordEntries } from "./filterEntries";
 
 interface PasswordListProps {
   /** Open the metadata-only edit dialog (title/username/url/category). */
@@ -93,6 +94,12 @@ const CheckIcon = () => (
     <path d="M3 8.4 6.4 12 13 4.6" />
   </svg>
 );
+const SearchIcon = () => (
+  <svg {...iconProps}>
+    <circle cx="7" cy="7" r="4.5" />
+    <path d="M10.5 10.5 14 14" />
+  </svg>
+);
 
 export function PasswordList({ onEdit, onSetPassword }: PasswordListProps) {
   const { t } = useI18n();
@@ -117,6 +124,13 @@ export function PasswordList({ onEdit, onSetPassword }: PasswordListProps) {
   const [rowError, setRowError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  // ── Search filter ──────────────────────────────────────────────────────────
+  const [query, setQuery] = useState("");
+  const visibleEntries = useMemo(
+    () => filterPasswordEntries(entries, query),
+    [entries, query],
+  );
+
   // ── Secret cleanup ───────────────────────────────────────────────────────────
   const clearReveal = useCallback(() => {
     if (hideTimer.current) {
@@ -135,11 +149,13 @@ export function PasswordList({ onEdit, onSetPassword }: PasswordListProps) {
     };
   }, []);
 
-  // If the entry set changes (lock, reset, edit), drop any revealed secret.
+  // If the entry set changes (lock, reset, edit) OR the search filter changes,
+  // drop any revealed secret. Filtering a revealed row out of view must not
+  // leave its plaintext lingering in state.
   useEffect(() => {
     clearReveal();
-    // Intentionally keyed on entries identity.
-  }, [entries, clearReveal]);
+    // Intentionally keyed on entries identity and the active query.
+  }, [entries, query, clearReveal]);
 
   // ── Lock-on-blur ──────────────────────────────────────────────────────────────
   // The backend emits "pw-focus-lost" on window blur (and clears its reveal grant
@@ -305,8 +321,33 @@ export function PasswordList({ onEdit, onSetPassword }: PasswordListProps) {
     <>
       {rowError && <p className="pw-error" role="alert">{rowError}</p>}
 
-      <ul className="pw-list" aria-label={t("passwords.title")}>
-        {entries.map((entry) => {
+      <div className="pw-search">
+        <span className="pw-search-icon" aria-hidden="true">
+          <SearchIcon />
+        </span>
+        <input
+          type="search"
+          className="pw-search-input"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t("passwords.search")}
+          aria-label={t("passwords.search")}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          data-form-type="other"
+          data-lpignore="true"
+        />
+      </div>
+
+      {visibleEntries.length === 0 ? (
+        <div className="pw-list-empty">
+          <p>{t("passwords.noResults")}</p>
+        </div>
+      ) : (
+        <ul className="pw-list" aria-label={t("passwords.title")}>
+          {visibleEntries.map((entry) => {
           const isRevealed = revealedId === entry.id;
           return (
             <li key={entry.id} className="pw-entry">
@@ -414,7 +455,8 @@ export function PasswordList({ onEdit, onSetPassword }: PasswordListProps) {
             </li>
           );
         })}
-      </ul>
+        </ul>
+      )}
 
       {/* ── Re-auth dialog — required before any reveal/copy ── */}
       <Dialog

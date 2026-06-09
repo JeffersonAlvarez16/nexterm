@@ -22,6 +22,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useProfileStore } from "../../stores/profileStore";
 import { useSessionStore, type SessionEntry } from "../../stores/sessionStore";
+import { useWorkspaceStore } from "../../stores/workspaceStore";
 import { useI18n } from "../../lib/i18n";
 import { Dialog } from "../ui/Dialog";
 import type { ConnectionProfile } from "../../lib/types";
@@ -121,6 +122,48 @@ function StatusDot({
 	if (connecting)
 		return <span className="lp-status-dot lp-status-dot-connecting" />;
 	return <span className="lp-status-dot lp-status-dot-idle" />;
+}
+
+// ─── Padlock icon ─────────────────────────────────────────
+// Top-level passwords section entry (independent of any SSH session).
+function PadlockIcon() {
+	return (
+		<svg
+			width="15"
+			height="15"
+			viewBox="0 0 16 16"
+			fill="none"
+			aria-hidden="true"
+		>
+			<rect
+				x="3"
+				y="7"
+				width="10"
+				height="7"
+				rx="1"
+				stroke="currentColor"
+				strokeWidth="1.2"
+				fill="none"
+			/>
+			<path
+				d="M5 7V5a3 3 0 0 1 6 0v2"
+				stroke="currentColor"
+				strokeWidth="1.2"
+				strokeLinecap="round"
+				fill="none"
+			/>
+			<circle cx="8" cy="10" r="1" stroke="currentColor" strokeWidth="1.1" fill="none" />
+			<line
+				x1="8"
+				y1="11"
+				x2="8"
+				y2="12.2"
+				stroke="currentColor"
+				strokeWidth="1.1"
+				strokeLinecap="round"
+			/>
+		</svg>
+	);
 }
 
 // ─── Sortable Profile Card ───────────────────────────────
@@ -554,6 +597,19 @@ export function Sidebar({
 		importProfiles,
 	} = useProfileStore();
 	const { sessions, activeSessionId, setActiveSession } = useSessionStore();
+
+	// Top-level passwords section toggle. Opening it takes over the main area as a
+	// full-screen view; navigating to a session closes it.
+	const passwordsViewOpen = useWorkspaceStore((s) => s.passwordsViewOpen);
+	const setPasswordsViewOpen = useWorkspaceStore((s) => s.setPasswordsViewOpen);
+
+	const handleSelectSession = useCallback(
+		(sessionId: string) => {
+			setPasswordsViewOpen(false);
+			setActiveSession(sessionId);
+		},
+		[setActiveSession, setPasswordsViewOpen],
+	);
 
 	const [searchQuery, setSearchQuery] = useState("");
 	const [profilesCollapsed, setProfilesCollapsed] = useState(false);
@@ -1002,7 +1058,7 @@ export function Sidebar({
 			);
 
 		if (activeSession) {
-			setActiveSession(activeSession.id);
+			handleSelectSession(activeSession.id);
 			return;
 		}
 
@@ -1129,6 +1185,18 @@ export function Sidebar({
 								);
 							})
 						)}
+					</div>
+
+					<div className="sidebar-rail-footer">
+						<button
+							className={`sidebar-rail-btn${passwordsViewOpen ? " sidebar-rail-btn-active" : ""}`}
+							onClick={() => setPasswordsViewOpen(!passwordsViewOpen)}
+							title={t("sidebar.passwords")}
+							aria-label={t("sidebar.passwords")}
+							aria-pressed={passwordsViewOpen}
+						>
+							<PadlockIcon />
+						</button>
 					</div>
 				</div>
 			) : (
@@ -1361,7 +1429,7 @@ export function Sidebar({
 																onConnect={onConnect}
 																onEditProfile={onEditProfile}
 																onDeleteClick={handleDeleteClick}
-																onSetActiveSession={setActiveSession}
+																onSetActiveSession={handleSelectSession}
 																onDisconnect={onDisconnect}
 																t={t}
 																connectingLabel={t("sidebar.connecting")}
@@ -1377,6 +1445,24 @@ export function Sidebar({
 								</div>
 							)}
 						</div>
+					</div>
+
+					<div className="sidebar-footer">
+						<button
+							type="button"
+							className={`sidebar-footer-btn${passwordsViewOpen ? " sidebar-footer-btn-active" : ""}`}
+							onClick={() => setPasswordsViewOpen(!passwordsViewOpen)}
+							title={t("sidebar.passwords")}
+							aria-label={t("sidebar.passwords")}
+							aria-pressed={passwordsViewOpen}
+						>
+							<span className="sidebar-footer-icon" aria-hidden="true">
+								<PadlockIcon />
+							</span>
+							<span className="sidebar-footer-label">
+								{t("sidebar.passwords")}
+							</span>
+						</button>
 					</div>
 				</>
 			)}

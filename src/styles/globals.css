@@ -795,7 +795,9 @@ body {
 		),
 		var(--bg-secondary);
 	border-right: 1px solid var(--border-subtle);
-	overflow-y: auto;
+	/* The sidebar itself never scrolls — only the profile list does (below).
+	   This keeps the topbar, search, and the passwords footer entry pinned. */
+	overflow: hidden;
 	display: flex;
 	flex-direction: column;
 	min-width: 0;
@@ -1000,6 +1002,81 @@ body {
 	opacity: 0.65;
 }
 
+/* ── Passwords section entry (left sidebar) ──
+   The password manager is a top-level section, surfaced as a footer entry
+   pinned to the bottom of the sidebar (expanded) or the rail (collapsed). */
+.sidebar-footer {
+	margin-top: auto;
+	flex-shrink: 0;
+	padding: 8px 10px 12px;
+	border-top: 1px solid var(--border-subtle);
+}
+
+.sidebar-footer-btn {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	padding: 9px 10px;
+	border: 1px solid transparent;
+	border-radius: var(--radius-md);
+	background: transparent;
+	color: var(--text-secondary);
+	font-family: var(--font-sans);
+	font-size: var(--fs-body);
+	font-weight: 500;
+	cursor: pointer;
+	transition:
+		background-color var(--transition-fast),
+		border-color var(--transition-fast),
+		color var(--transition-fast);
+}
+
+.sidebar-footer-btn:hover,
+.sidebar-footer-btn:focus-visible {
+	color: var(--text-primary);
+	background: var(--bg-raised);
+	border-color: var(--border-subtle);
+	outline: none;
+}
+
+.sidebar-footer-btn-active {
+	color: var(--accent);
+	background: var(--accent-wash);
+	border-color: var(--border-subtle);
+}
+
+.sidebar-footer-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+
+.sidebar-footer-label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Collapsed rail: pin the passwords entry to the bottom of the rail. */
+.sidebar-rail-footer {
+	margin-top: auto;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	width: 100%;
+	padding-top: 12px;
+	border-top: 1px solid var(--border-subtle);
+}
+
+.sidebar-rail-btn-active {
+	color: var(--accent);
+	background: var(--accent-wash);
+	border-color: var(--border-subtle);
+}
+
 .sidebar::-webkit-scrollbar-thumb {
 	background-color: transparent;
 }
@@ -1011,6 +1088,10 @@ body {
 .sidebar-section {
 	display: flex;
 	flex-direction: column;
+	/* Grow to fill the space between search and footer, and allow the inner
+	   profile list to own the scroll (min-height:0 unlocks flex overflow). */
+	flex: 1 1 auto;
+	min-height: 0;
 }
 
 .sidebar-section + .sidebar-section {
@@ -1519,6 +1600,9 @@ body {
 	display: grid;
 	grid-template-rows: 1fr;
 	overflow: hidden;
+	/* Fill the section and bound the grid row so .lp-profile-list can scroll. */
+	flex: 1;
+	min-height: 0;
 	transition:
 		grid-template-rows var(--transition-slow),
 		opacity var(--transition-normal);
@@ -3306,6 +3390,10 @@ body {
 	position: relative;
 	padding: 0 6px 8px;
 	outline: none; /* custom focus handled by bar */
+	/* The single scroll region of the sidebar. Bounded by the grid row above. */
+	min-height: 0;
+	height: 100%;
+	overflow-y: auto;
 }
 
 .lp-profile-list:focus-visible {
@@ -7232,6 +7320,28 @@ dialog::backdrop {
    ═══════════════════════════════════════════════════ */
 
 /* ── Panel shell ── */
+/* ── Full-screen passwords section (top-level view) ──
+   When opened from the sidebar entry, the password manager takes over the main
+   content area. The panel content is centred and width-capped for readability. */
+.passwords-view {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	justify-content: center;
+	overflow-y: auto;
+	background-color: var(--bg-primary);
+}
+
+.passwords-view .pw-panel {
+	/* flex:none so the width cap wins (base .pw-panel sets flex:1). Height still
+	   stretches via the row container's default align-items:stretch. */
+	flex: none;
+	width: 100%;
+	max-width: 760px;
+	padding: 24px 20px 32px;
+	background-color: transparent;
+}
+
 .pw-panel {
 	display: flex;
 	flex-direction: column;
@@ -7260,6 +7370,48 @@ dialog::backdrop {
 	justify-content: space-between;
 	gap: 8px;
 	flex-shrink: 0;
+}
+
+/* ── Search filter ── */
+.pw-search {
+	position: relative;
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
+}
+
+.pw-search-icon {
+	position: absolute;
+	left: 11px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-tertiary);
+	pointer-events: none;
+}
+
+.pw-search-input {
+	width: 100%;
+	padding: 9px 12px 9px 34px;
+	background-color: var(--bg-raised);
+	border: 1px solid var(--border-subtle);
+	border-radius: var(--radius-lg);
+	color: var(--text-primary);
+	font-size: var(--fs-body);
+	font-family: var(--font-sans);
+	transition:
+		border-color var(--transition-fast),
+		box-shadow var(--transition-fast);
+}
+
+.pw-search-input::placeholder {
+	color: var(--text-tertiary);
+}
+
+.pw-search-input:focus-visible {
+	outline: none;
+	border-color: var(--accent);
+	box-shadow: 0 0 0 2px var(--accent-wash);
 }
 
 .pw-lock-btn {

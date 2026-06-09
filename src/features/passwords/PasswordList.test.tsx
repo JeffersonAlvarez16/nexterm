@@ -98,6 +98,52 @@ describe("PasswordList — single-use, id-bound reveal", () => {
   });
 });
 
+describe("PasswordList — search filter", () => {
+  const ROW2: PasswordEntryMeta = {
+    id: "row-2",
+    title: "GitLab",
+    username: "tux",
+    url: "https://gitlab.com",
+    category: "Work",
+    createdAt: 1,
+    updatedAt: 2,
+  };
+
+  beforeEach(() => {
+    usePasswordStore.setState({
+      entries: [META, ROW2],
+      loading: false,
+      reauth,
+      reveal,
+      remove,
+    } as never);
+  });
+
+  it("filters the rows by the typed query", () => {
+    render(<PasswordList onEdit={() => {}} onSetPassword={() => {}} />);
+
+    expect(screen.getByText("GitHub")).toBeInTheDocument();
+    expect(screen.getByText("GitLab")).toBeInTheDocument();
+
+    const search = screen.getByRole("searchbox", { name: "passwords.search" });
+    fireEvent.change(search, { target: { value: "gitlab" } });
+
+    expect(screen.queryByText("GitHub")).not.toBeInTheDocument();
+    expect(screen.getByText("GitLab")).toBeInTheDocument();
+  });
+
+  it("shows a no-results message when nothing matches", () => {
+    render(<PasswordList onEdit={() => {}} onSetPassword={() => {}} />);
+
+    const search = screen.getByRole("searchbox", { name: "passwords.search" });
+    fireEvent.change(search, { target: { value: "nothing-matches-this" } });
+
+    expect(screen.getByText("passwords.noResults")).toBeInTheDocument();
+    expect(screen.queryByText("GitHub")).not.toBeInTheDocument();
+    expect(screen.queryByText("GitLab")).not.toBeInTheDocument();
+  });
+});
+
 describe("PasswordList — lock-on-blur hides revealed secrets", () => {
   it("clears a revealed secret when the 'pw-focus-lost' event fires", async () => {
     render(<PasswordList onEdit={() => {}} onSetPassword={() => {}} />);

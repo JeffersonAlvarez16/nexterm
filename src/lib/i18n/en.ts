@@ -620,6 +620,8 @@ export const en = {
 
   // Side panel — passwords section
   "panel.passwords": "Passwords",
+  // Left sidebar — top-level passwords section entry
+  "sidebar.passwords": "Passwords",
 
   // Password manager (independent second vault)
   "passwords.title": "Password Manager",
@@ -643,6 +645,8 @@ export const en = {
   "passwords.deleteConfirm": "Confirm delete",
   "passwords.empty": "No passwords saved yet",
   "passwords.emptyHint": "Click Add Password to save your first one",
+  "passwords.search": "Search passwords",
+  "passwords.noResults": "No passwords match your search",
   "passwords.passwordRequired": "Password is required",
   "passwords.passwordTooShort": "Use at least {min} characters",
   "passwords.passwordMismatch": "Passwords don't match",
