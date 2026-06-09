@@ -17,11 +17,11 @@ use crate::profile::ConnectionProfile;
 use crate::ssh::tunnel::RemoteForwardRegistry;
 use crate::vault::{idle_should_lock, Vault, DEFAULT_IDLE_TIMEOUT_SECS};
 
-/// Default idle timeout before the INDEPENDENT password store auto-locks: 5
-/// minutes. Deliberately shorter than the SSH vault's 15-minute default and
+/// Default idle timeout before the INDEPENDENT password store auto-locks: 1
+/// minute. Deliberately much shorter than the SSH vault's 15-minute default and
 /// tracked by its own [`AutoLockState`] so SSH activity never extends the
 /// password store's unlocked window.
-pub const PW_DEFAULT_IDLE_TIMEOUT_SECS: u64 = 300;
+pub const PW_DEFAULT_IDLE_TIMEOUT_SECS: u64 = 60;
 
 // ─── Type Aliases ───────────────────────────────────────
 
@@ -654,17 +654,17 @@ mod tests {
     }
 
     #[test]
-    fn password_store_auto_lock_defaults_to_five_minutes_independent_of_vault() {
-        // The password store must default to 300s, distinct from the SSH
+    fn password_store_auto_lock_defaults_to_one_minute_independent_of_vault() {
+        // The password store must default to 60s, distinct from the SSH
         // vault's 900s, and the two timers must be independent instances.
-        assert_eq!(PW_DEFAULT_IDLE_TIMEOUT_SECS, 300);
+        assert_eq!(PW_DEFAULT_IDLE_TIMEOUT_SECS, 60);
         let state = AppState::default();
         assert_eq!(state.auto_lock.idle_timeout_secs(), 900);
-        assert_eq!(state.passwords_auto_lock.idle_timeout_secs(), 300);
+        assert_eq!(state.passwords_auto_lock.idle_timeout_secs(), 60);
 
         // Changing one must NOT affect the other (separate Arc<AutoLockState>).
-        state.passwords_auto_lock.set_idle_timeout_secs(60);
-        assert_eq!(state.passwords_auto_lock.idle_timeout_secs(), 60);
+        state.passwords_auto_lock.set_idle_timeout_secs(120);
+        assert_eq!(state.passwords_auto_lock.idle_timeout_secs(), 120);
         assert_eq!(state.auto_lock.idle_timeout_secs(), 900);
     }
 
