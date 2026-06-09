@@ -206,7 +206,10 @@ export function PasswordsPanel() {
       const count = await importFromFile(filePath);
       setBanner({ type: "success", message: t("passwords.importSuccess", { count }) });
     } catch (err) {
-      setBanner({ type: "error", message: t("passwords.importError") });
+      // [N-2] Surface the real error message (e.g. "unsupported format",
+      // "invalid JSON") so actionable feedback reaches the user, not just a
+      // generic key.
+      setBanner({ type: "error", message: String(err) });
     }
   }, [importFromFile, t]);
 

@@ -376,15 +376,22 @@ export const usePasswordStore = create<PasswordStoreState>((set, get) => ({
 
   importFromFile: async (path: string) => {
     set({ error: null });
-    try {
-      const count = await tauriInvoke<number>("pw_import_from_file", { path });
-      // Refresh the entry list so the UI reflects the newly imported entries.
-      await get().list();
-      return count;
-    } catch (err) {
-      set({ error: String(err) });
-      throw err;
-    }
+    // [W-4] Capture the import count BEFORE the list refresh. A list() failure
+    // after a successful import must not mask the import result: we refresh
+    // best-effort via a raw tauriInvoke (bypassing the store's list() which
+    // would set the error field on failure) and return the count unconditionally.
+    const count = await tauriInvoke<number>("pw_import_from_file", { path }).catch(
+      (err: unknown) => {
+        set({ error: String(err) });
+        throw err;
+      },
+    );
+    // Best-effort list refresh — silently update entries on success, ignore
+    // any error so a transient list failure never overwrites the import result.
+    await tauriInvoke<PasswordEntryMeta[]>("pw_list")
+      .then((entries) => set({ entries }))
+      .catch(() => {});
+    return count;
   },
 
   clearError: () => set({ error: null }),

@@ -532,12 +532,13 @@ pub async fn pw_import_from_file(
     let path_obj = std::path::PathBuf::from(path);
 
     // Take the store out of the slot so we can move it into the blocking task.
-    let mut store = {
+    let store = {
         let mut guard = state.passwords.lock().await;
         guard.take().ok_or(AppError::VaultLocked)?
     };
 
     let result = tokio::task::spawn_blocking(move || {
+        let mut store = store;
         let res = store.import_from_file(&path_obj);
         (store, res)
     })

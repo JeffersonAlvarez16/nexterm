@@ -242,4 +242,31 @@ describe("passwordStore", () => {
 
     expect(usePasswordStore.getState().error).not.toBeNull();
   });
+
+  // ── [W-4] importFromFile — list failure must not mask a successful import ──
+
+  it("[W-4] importFromFile() returns the count even when the subsequent list() call fails", async () => {
+    // First call: import succeeds with count=2.
+    mockTauriInvoke.mockResolvedValueOnce(2); // pw_import_from_file
+    // Second call: list fails (e.g. transient backend error).
+    mockTauriInvoke.mockRejectedValueOnce(new Error("transient list error")); // pw_list
+
+    // The import count must be returned; the list error must not propagate.
+    const count = await usePasswordStore.getState().importFromFile("/tmp/bw.json");
+
+    expect(count).toBe(2);
+    // No import error in the store — the list failure is swallowed best-effort.
+    expect(usePasswordStore.getState().error).toBeNull();
+  });
+
+  it("[W-4] importFromFile() still throws when the IMPORT itself fails, regardless of list", async () => {
+    // Import fails.
+    mockTauriInvoke.mockRejectedValueOnce(new Error("unsupported format: .xml"));
+
+    await expect(
+      usePasswordStore.getState().importFromFile("/tmp/bw.xml"),
+    ).rejects.toThrow("unsupported format: .xml");
+
+    expect(usePasswordStore.getState().error).not.toBeNull();
+  });
 });
