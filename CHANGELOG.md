@@ -6,6 +6,11 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-06-09
+
+### Fixed
+- "Update now" in the update dialog silently did nothing: the pending update was stored in a per-component ref, so the dialog that found the update and the dialog that installs it never shared it. The pending update is now module-scoped.
+
 ## [0.4.1] - 2026-06-09
 
 ### Changed
