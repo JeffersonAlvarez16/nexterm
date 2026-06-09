@@ -6,6 +6,25 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-09
+
+### Added
+- Password manager promoted to a top-level, full-screen section reachable from a pinned entry in the left sidebar, independent of any SSH session (it previously lived in the per-session side panel).
+- Live search filter over saved passwords (matches title, username, URL, and category).
+- Bitwarden-compatible import (unencrypted `.json` or `.csv`) and plaintext CSV export of the password vault. Export is gated behind a master-password re-authentication and a plaintext warning.
+- About dialog (bottom status bar) showing the app version, a link to the project on GitHub, and a manual "Check for updates" action.
+- Proxmox QEMU virtual-machine management (`qm`) alongside the existing LXC containers (`pct`): list, start/stop/reboot, and snapshots, with the same injection-safe VMID and snapshot-name validation.
+- Homebrew custom-tap cask for macOS distribution (`packaging/homebrew/`).
+
+### Changed
+- The independent password store now auto-locks after 1 minute of inactivity by default (was 5 minutes); existing stores keep their saved timeout.
+- Re-enabled the Tauri auto-updater: macOS release builds are now code-signed and notarized in CI, the macOS artifact is a single universal (arm64 + Intel) DMG, and `latest.json` is published. See `docs/RELEASE_SIGNING.md` for the required secrets.
+
+### Fixed
+- macOS: closing the main window (red traffic-light / Cmd-W) now quits the app instead of leaving a headless process holding the single-instance lock.
+- "View project on GitHub" now opens the browser (the opener capability was missing the default-URL scope).
+- Hardened CSV import/export per an adversarial security review: record-aware CSV parsing (multiline fields no longer corrupt on reimport), real Bitwarden JSON with `"uri": null` now imports, formula-injection neutralization (`=`/`+`/`-`/`@`) on export, a clear error for encrypted Bitwarden exports, plaintext buffers zeroized, and rollback on partial import failure.
+
 ## [0.3.0] - 2026-06-08
 
 ### Added
