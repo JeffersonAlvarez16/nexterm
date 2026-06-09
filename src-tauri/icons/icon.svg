@@ -1,77 +1,87 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <defs>
-    <!-- Background gradient -->
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#161b22"/>
-      <stop offset="100%" stop-color="#0d1117"/>
+    <!-- Background: deep space navy -->
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#101729"/>
+      <stop offset="55%" stop-color="#0a0f1e"/>
+      <stop offset="100%" stop-color="#060912"/>
     </linearGradient>
 
-    <!-- Accent glow gradient -->
-    <linearGradient id="accent" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#58a6ff"/>
-      <stop offset="100%" stop-color="#1f6feb"/>
+    <!-- Ambient glow behind the glyph -->
+    <radialGradient id="glow" cx="0.5" cy="0.48" r="0.55">
+      <stop offset="0%" stop-color="#2563eb" stop-opacity="0.35"/>
+      <stop offset="55%" stop-color="#1d4ed8" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#1d4ed8" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Aurora accent: cyan to blue to violet -->
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#67e8f9"/>
+      <stop offset="45%" stop-color="#38bdf6"/>
+      <stop offset="100%" stop-color="#6366f1"/>
     </linearGradient>
 
-    <!-- Subtle inner shadow -->
-    <linearGradient id="innerEdge" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.06"/>
+    <!-- Cursor gradient -->
+    <linearGradient id="cursor" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#38bdf6"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+
+    <!-- Top sheen -->
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="40%" stop-color="#ffffff" stop-opacity="0.02"/>
       <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
 
-    <!-- Shield gradient -->
-    <linearGradient id="shieldGrad" x1="0.5" y1="0" x2="0.5" y2="1">
-      <stop offset="0%" stop-color="#58a6ff" stop-opacity="0.15"/>
-      <stop offset="100%" stop-color="#1f6feb" stop-opacity="0.08"/>
+    <!-- Soft halo for the chevron (fake outer glow, no filters) -->
+    <linearGradient id="halo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#38bdf6" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#6366f1" stop-opacity="0.22"/>
     </linearGradient>
 
-    <!-- Drop shadow for depth -->
-    <filter id="textShadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#58a6ff" flood-opacity="0.35"/>
-    </filter>
-
-    <!-- Subtle glow on lock -->
-    <filter id="lockGlow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="1" stdDeviation="4" flood-color="#58a6ff" flood-opacity="0.5"/>
-    </filter>
+    <clipPath id="squircle">
+      <rect width="1024" height="1024" rx="228" ry="228"/>
+    </clipPath>
   </defs>
 
-  <!-- Background rounded rectangle (macOS style ~22% radius) -->
-  <rect width="512" height="512" rx="112" ry="112" fill="url(#bg)"/>
+  <!-- Base squircle -->
+  <rect width="1024" height="1024" rx="228" ry="228" fill="url(#bg)"/>
 
-  <!-- Subtle top edge highlight -->
-  <rect x="4" y="4" width="504" height="504" rx="108" ry="108"
-        fill="none" stroke="url(#innerEdge)" stroke-width="1"/>
+  <g clip-path="url(#squircle)">
+    <!-- Ambient center glow -->
+    <rect width="1024" height="1024" fill="url(#glow)"/>
 
-  <!-- Outer border -->
-  <rect x="1" y="1" width="510" height="510" rx="111" ry="111"
-        fill="none" stroke="#30363d" stroke-width="1.5"/>
+    <!-- Faint orbital arcs: connectivity motif -->
+    <circle cx="512" cy="512" r="368" fill="none" stroke="#60a5fa" stroke-opacity="0.10" stroke-width="2.5"/>
+    <circle cx="512" cy="512" r="436" fill="none" stroke="#60a5fa" stroke-opacity="0.05" stroke-width="2"/>
+    <!-- Node dots on the inner orbit -->
+    <circle cx="512" cy="144" r="9" fill="#67e8f9" opacity="0.55"/>
+    <circle cx="831" cy="696" r="7" fill="#818cf8" opacity="0.45"/>
+    <circle cx="193" cy="696" r="7" fill="#38bdf6" opacity="0.45"/>
 
-  <!-- Shield shape behind the prompt (subtle security element) -->
-  <path d="M256 90 L370 140 L370 280 Q370 380 256 420 Q142 380 142 280 L142 140 Z"
-        fill="url(#shieldGrad)" stroke="#58a6ff" stroke-width="1.5" stroke-opacity="0.12"/>
-
-  <!-- Terminal prompt ">_" — the main icon element -->
-  <g filter="url(#textShadow)">
-    <!-- ">" chevron -->
-    <path d="M140 195 L230 256 L140 317"
-          fill="none" stroke="url(#accent)" stroke-width="32"
-          stroke-linecap="round" stroke-linejoin="round"/>
-
-    <!-- "_" underscore/cursor -->
-    <line x1="255" y1="317" x2="365" y2="317"
-          stroke="#58a6ff" stroke-width="32" stroke-linecap="round"/>
+    <!-- Top sheen -->
+    <rect width="1024" height="540" fill="url(#sheen)"/>
   </g>
 
-  <!-- Small lock icon (bottom-right, security indicator) -->
-  <g transform="translate(358, 370)" filter="url(#lockGlow)">
-    <!-- Lock shackle -->
-    <path d="M22 32 L22 20 Q22 6 36 6 Q50 6 50 20 L50 32"
-          fill="none" stroke="#58a6ff" stroke-width="5" stroke-linecap="round"/>
-    <!-- Lock body -->
-    <rect x="14" y="30" width="44" height="34" rx="6" ry="6"
-          fill="url(#accent)"/>
-    <!-- Keyhole -->
-    <circle cx="36" cy="44" r="5" fill="#0d1117"/>
-    <rect x="34" y="47" width="4" height="9" rx="1" fill="#0d1117"/>
+  <!-- Halo strokes behind glyph (soft glow imitation) -->
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M300 360 L484 512 L300 664" fill="none" stroke="url(#halo)" stroke-width="118"/>
+    <rect x="481" y="605" width="322" height="118" rx="59" fill="url(#halo)"/>
   </g>
+
+  <!-- Terminal glyph ">_" -->
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M300 360 L484 512 L300 664" fill="none" stroke="url(#accent)" stroke-width="76"/>
+    <rect x="502" y="626" width="280" height="76" rx="38" fill="url(#cursor)"/>
+  </g>
+
+  <!-- Specular highlight on the chevron elbow -->
+  <path d="M318 378 L466 500" fill="none" stroke="#e0f2fe" stroke-opacity="0.35" stroke-width="14" stroke-linecap="round"/>
+
+  <!-- Inner border for definition -->
+  <rect x="3" y="3" width="1018" height="1018" rx="225" ry="225"
+        fill="none" stroke="#3b82f6" stroke-opacity="0.22" stroke-width="3"/>
+  <rect x="1.5" y="1.5" width="1021" height="1021" rx="227" ry="227"
+        fill="none" stroke="#0c1220" stroke-width="3"/>
 </svg>
