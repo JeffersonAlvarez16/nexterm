@@ -884,8 +884,7 @@ impl PasswordStore {
         };
 
         // [W-2] Snapshot the existing IDs so we can roll back on partial failure.
-        let ids_before: std::collections::BTreeSet<String> =
-            self.entries.keys().cloned().collect();
+        let ids_before: std::collections::BTreeSet<String> = self.entries.keys().cloned().collect();
 
         let mut added_ids: Vec<String> = Vec::new();
         let mut import_error: Option<AppError> = None;
@@ -1055,9 +1054,7 @@ fn parse_bitwarden_csv(contents: &str) -> Result<Vec<PasswordEntryInput>, AppErr
     let header_fields = parse_csv_line(&header);
 
     // Build a name → column-index map so we are robust to column reordering.
-    let col = |name: &str| -> Option<usize> {
-        header_fields.iter().position(|h| h.trim() == name)
-    };
+    let col = |name: &str| -> Option<usize> { header_fields.iter().position(|h| h.trim() == name) };
 
     let col_folder = col("folder");
     let col_type = col("type");
@@ -1948,9 +1945,7 @@ mod tests {
         store.add(&sample_input()).unwrap();
 
         let csv_path = dir.path().join("export.csv");
-        let count = store
-            .export_to_csv(&csv_path, "master-password")
-            .unwrap();
+        let count = store.export_to_csv(&csv_path, "master-password").unwrap();
         assert_eq!(count, 1);
 
         let contents = std::fs::read_to_string(&csv_path).unwrap();
@@ -2004,9 +1999,7 @@ mod tests {
         store.add(&sample_input()).unwrap();
 
         let csv_path = dir.path().join("export.csv");
-        store
-            .export_to_csv(&csv_path, "master-password")
-            .unwrap();
+        store.export_to_csv(&csv_path, "master-password").unwrap();
 
         // Import into a fresh store.
         let dir2 = tempfile::tempdir().unwrap();
@@ -2271,7 +2264,11 @@ mod tests {
         // Simple formulas (no quoting needed after prefix): output starts with `'`.
         assert_eq!(csv_field("+1234"), "'+1234", "+ prefix must be neutralized");
         assert_eq!(csv_field("-1234"), "'-1234", "- prefix must be neutralized");
-        assert_eq!(csv_field("@SUM(A1)"), "'@SUM(A1)", "@ prefix must be neutralized");
+        assert_eq!(
+            csv_field("@SUM(A1)"),
+            "'@SUM(A1)",
+            "@ prefix must be neutralized"
+        );
 
         // `=HYPERLINK("evil")` — neutralized prefix makes it `'=HYPERLINK("evil")`,
         // which contains `"` so it gets RFC 4180-quoted: `"'=HYPERLINK(""evil"")"`
@@ -2280,7 +2277,10 @@ mod tests {
             out.starts_with("\"'="),
             "= formula with quotes must be quoted and neutralized, got: {out}"
         );
-        assert!(out.contains("'=HYPERLINK"), "must contain neutralized prefix: {out}");
+        assert!(
+            out.contains("'=HYPERLINK"),
+            "must contain neutralized prefix: {out}"
+        );
 
         // A formula with a comma: neutralized prefix + quoting.
         let out2 = csv_field("=HYPERLINK(\"a,b\")");
@@ -2291,7 +2291,10 @@ mod tests {
 
         // A formula with no special chars: just `'` prefix, no quoting wrapper.
         let out3 = csv_field("=1+1");
-        assert_eq!(out3, "'=1+1", "simple formula must just get the prefix: {out3}");
+        assert_eq!(
+            out3, "'=1+1",
+            "simple formula must just get the prefix: {out3}"
+        );
     }
 
     // ─── [W-1] Encrypted Bitwarden JSON ─────────────────
@@ -2351,7 +2354,11 @@ mod tests {
         drop(store);
         let store2 = PasswordStore::unlock(dir.path(), "master-password").unwrap();
         let list = store2.list().unwrap();
-        assert_eq!(list.len(), 1, "pre-existing entry must survive failed import");
+        assert_eq!(
+            list.len(),
+            1,
+            "pre-existing entry must survive failed import"
+        );
         assert_eq!(list[0].id, pre_id);
     }
 }

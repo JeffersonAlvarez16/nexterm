@@ -228,7 +228,9 @@ pub(crate) async fn proxmox_lifecycle_action_inner(
     };
 
     let command = build_lifecycle_command(&action, vmid, &kind);
-    tracing::debug!("proxmox_lifecycle_action: session={session_id} kind={kind:?} command={command:?}");
+    tracing::debug!(
+        "proxmox_lifecycle_action: session={session_id} kind={kind:?} command={command:?}"
+    );
 
     let opts = ExecOptions {
         timeout_secs: PCT_CMD_TIMEOUT_SECS,
@@ -368,7 +370,9 @@ pub(crate) async fn proxmox_create_snapshot_inner(
     };
 
     let command = build_snapshot_command(vmid, &validated_name, &kind);
-    tracing::debug!("proxmox_create_snapshot: session={session_id} kind={kind:?} command={command:?}");
+    tracing::debug!(
+        "proxmox_create_snapshot: session={session_id} kind={kind:?} command={command:?}"
+    );
 
     let opts = ExecOptions {
         timeout_secs: PCT_CMD_TIMEOUT_SECS,
@@ -436,7 +440,9 @@ pub(crate) async fn proxmox_rollback_snapshot_inner(
     };
 
     let command = build_rollback_command(vmid, &validated_name, &kind);
-    tracing::debug!("proxmox_rollback_snapshot: session={session_id} kind={kind:?} command={command:?}");
+    tracing::debug!(
+        "proxmox_rollback_snapshot: session={session_id} kind={kind:?} command={command:?}"
+    );
 
     let opts = ExecOptions {
         timeout_secs: PCT_CMD_TIMEOUT_SECS,
@@ -504,7 +510,9 @@ pub(crate) async fn proxmox_delete_snapshot_inner(
     };
 
     let command = build_delsnapshot_command(vmid, &validated_name, &kind);
-    tracing::debug!("proxmox_delete_snapshot: session={session_id} kind={kind:?} command={command:?}");
+    tracing::debug!(
+        "proxmox_delete_snapshot: session={session_id} kind={kind:?} command={command:?}"
+    );
 
     let opts = ExecOptions {
         timeout_secs: PCT_CMD_TIMEOUT_SECS,

@@ -197,11 +197,7 @@ fn cli(kind: &GuestKind) -> &'static str {
 ///
 /// Passing `GuestKind::Lxc` produces the same output as before, preserving
 /// backward compatibility for all existing LXC callers.
-pub fn build_lifecycle_command(
-    action: &LxcAction,
-    vmid: ProxmoxVmid,
-    kind: &GuestKind,
-) -> String {
+pub fn build_lifecycle_command(action: &LxcAction, vmid: ProxmoxVmid, kind: &GuestKind) -> String {
     let verb = match action {
         LxcAction::Start => "start",
         LxcAction::Stop => "stop",
