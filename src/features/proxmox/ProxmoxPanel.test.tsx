@@ -11,9 +11,11 @@ vi.mock("../../lib/i18n", () => ({
       const labels: Record<string, string> = {
         "proxmox.unavailable":
           "Not a Proxmox host or insufficient permissions",
-        "proxmox.loading": "Loading LXC containers...",
-        "proxmox.empty": "No LXC containers found",
+        "proxmox.loading": "Loading Proxmox guests...",
+        "proxmox.empty": "No containers or virtual machines found",
         "proxmox.refresh": "Refresh",
+        "proxmox.containers": "Containers",
+        "proxmox.virtualMachines": "Virtual Machines",
         "proxmox.col.vmid": "VMID",
         "proxmox.col.name": "Name",
         "proxmox.col.status": "Status",
@@ -27,7 +29,7 @@ vi.mock("../../lib/i18n", () => ({
         "proxmox.snapshot.rollback.confirm": "Confirm Rollback",
         "proxmox.snapshot.rollback.cancel": "Cancel",
         "proxmox.snapshot.rollback.warning":
-          "Warning: rollback discards current container state",
+          "Warning: rollback discards current guest state",
         "proxmox.snapshot.delete.arm": "Delete",
         "proxmox.snapshot.delete.confirm": "Confirm Delete",
         "proxmox.snapshot.delete.cancel": "Cancel",
@@ -59,8 +61,10 @@ import { useProxmoxStore } from "../../stores/proxmoxStore";
 function resetProxmoxStore() {
   useProxmoxStore.setState({
     containers: new Map(),
+    vms: new Map(),
     snapshots: new Map(),
     availability: new Map(),
+    vmAvailability: new Map(),
     loading: new Map(),
   });
 }
@@ -96,11 +100,13 @@ describe("ProxmoxPanel", () => {
     mockTauriInvoke.mockResolvedValue({ snapshots: [] });
   });
 
-  it("renders unavailable state when availability=false", () => {
+  it("renders unavailable state when availability=false and no vms", () => {
     useProxmoxStore.setState({
       containers: new Map([[SESSION_ID, []]]),
+      vms: new Map([[SESSION_ID, []]]),
       snapshots: new Map(),
       availability: new Map([[SESSION_ID, false]]),
+      vmAvailability: new Map([[SESSION_ID, false]]),
       loading: new Map(),
     });
     render(<ProxmoxPanel sessionId={SESSION_ID} />);
@@ -112,35 +118,38 @@ describe("ProxmoxPanel", () => {
   it("renders loading state while loading=true and availability is unknown", () => {
     useProxmoxStore.setState({
       containers: new Map(),
+      vms: new Map(),
       snapshots: new Map(),
       availability: new Map(),
+      vmAvailability: new Map(),
       loading: new Map([[SESSION_ID, true]]),
     });
     render(<ProxmoxPanel sessionId={SESSION_ID} />);
-    expect(screen.getByText(/Loading LXC containers/i)).toBeInTheDocument();
+    expect(screen.getByText(/Loading Proxmox guests/i)).toBeInTheDocument();
   });
 
-  it("renders empty state when containers list is empty and available", () => {
+  it("renders empty state when both containers and vms are empty and available", () => {
     useProxmoxStore.setState({
       containers: new Map([[SESSION_ID, []]]),
+      vms: new Map([[SESSION_ID, []]]),
       snapshots: new Map(),
       availability: new Map([[SESSION_ID, true]]),
+      vmAvailability: new Map([[SESSION_ID, true]]),
       loading: new Map([[SESSION_ID, false]]),
     });
     render(<ProxmoxPanel sessionId={SESSION_ID} />);
-    expect(screen.getByText(/No LXC containers/i)).toBeInTheDocument();
+    expect(screen.getByText(/No containers or virtual machines/i)).toBeInTheDocument();
   });
 
   it("renders LXC table with vmid, name, and status badge when containers present", () => {
     useProxmoxStore.setState({
       containers: new Map([
-        [
-          SESSION_ID,
-          [{ vmid: 100, status: "running", name: "debian-dev" }],
-        ],
+        [SESSION_ID, [{ vmid: 100, status: "running", name: "debian-dev" }]],
       ]),
+      vms: new Map([[SESSION_ID, []]]),
       snapshots: new Map(),
       availability: new Map([[SESSION_ID, true]]),
+      vmAvailability: new Map([[SESSION_ID, true]]),
       loading: new Map([[SESSION_ID, false]]),
     });
     render(<ProxmoxPanel sessionId={SESSION_ID} />);
@@ -149,20 +158,102 @@ describe("ProxmoxPanel", () => {
     expect(screen.getByText("running")).toBeInTheDocument();
   });
 
+  it("renders Containers section heading when containers present", () => {
+    useProxmoxStore.setState({
+      containers: new Map([
+        [SESSION_ID, [{ vmid: 100, status: "running", name: "debian-dev" }]],
+      ]),
+      vms: new Map([[SESSION_ID, []]]),
+      snapshots: new Map(),
+      availability: new Map([[SESSION_ID, true]]),
+      vmAvailability: new Map([[SESSION_ID, true]]),
+      loading: new Map([[SESSION_ID, false]]),
+    });
+    render(<ProxmoxPanel sessionId={SESSION_ID} />);
+    expect(screen.getByText("Containers")).toBeInTheDocument();
+  });
+
+  it("renders Virtual Machines section heading when vms present", () => {
+    useProxmoxStore.setState({
+      containers: new Map([[SESSION_ID, []]]),
+      vms: new Map([
+        [SESSION_ID, [{ vmid: 200, name: "win-server", status: "running" }]],
+      ]),
+      snapshots: new Map(),
+      availability: new Map([[SESSION_ID, true]]),
+      vmAvailability: new Map([[SESSION_ID, true]]),
+      loading: new Map([[SESSION_ID, false]]),
+    });
+    render(<ProxmoxPanel sessionId={SESSION_ID} />);
+    expect(screen.getByText("Virtual Machines")).toBeInTheDocument();
+  });
+
+  it("renders VM row with vmid, name, and status badge", () => {
+    useProxmoxStore.setState({
+      containers: new Map([[SESSION_ID, []]]),
+      vms: new Map([
+        [SESSION_ID, [{ vmid: 200, name: "win-server", status: "stopped" }]],
+      ]),
+      snapshots: new Map(),
+      availability: new Map([[SESSION_ID, true]]),
+      vmAvailability: new Map([[SESSION_ID, true]]),
+      loading: new Map([[SESSION_ID, false]]),
+    });
+    render(<ProxmoxPanel sessionId={SESSION_ID} />);
+    expect(screen.getByText("200")).toBeInTheDocument();
+    expect(screen.getByText("win-server")).toBeInTheDocument();
+    expect(screen.getByText("stopped")).toBeInTheDocument();
+  });
+
+  it("renders both Containers and Virtual Machines sections when both present", () => {
+    useProxmoxStore.setState({
+      containers: new Map([
+        [SESSION_ID, [{ vmid: 100, status: "running", name: "debian-dev" }]],
+      ]),
+      vms: new Map([
+        [SESSION_ID, [{ vmid: 200, name: "win-server", status: "stopped" }]],
+      ]),
+      snapshots: new Map(),
+      availability: new Map([[SESSION_ID, true]]),
+      vmAvailability: new Map([[SESSION_ID, true]]),
+      loading: new Map([[SESSION_ID, false]]),
+    });
+    render(<ProxmoxPanel sessionId={SESSION_ID} />);
+    expect(screen.getByText("Containers")).toBeInTheDocument();
+    expect(screen.getByText("Virtual Machines")).toBeInTheDocument();
+    expect(screen.getByText("debian-dev")).toBeInTheDocument();
+    expect(screen.getByText("win-server")).toBeInTheDocument();
+  });
+
+  it("does NOT render Shell button for VMs (VMs have no pct enter)", () => {
+    useProxmoxStore.setState({
+      containers: new Map([[SESSION_ID, []]]),
+      vms: new Map([
+        [SESSION_ID, [{ vmid: 200, name: "win-server", status: "running" }]],
+      ]),
+      snapshots: new Map(),
+      availability: new Map([[SESSION_ID, true]]),
+      vmAvailability: new Map([[SESSION_ID, true]]),
+      loading: new Map([[SESSION_ID, false]]),
+    });
+    render(<ProxmoxPanel sessionId={SESSION_ID} />);
+    expect(screen.queryByRole("button", { name: /Shell/i })).not.toBeInTheDocument();
+  });
+
   it("renders lifecycle buttons (Stop for running containers)", () => {
     useProxmoxStore.setState({
       containers: new Map([
         [SESSION_ID, [{ vmid: 100, status: "running", name: "debian-dev" }]],
       ]),
+      vms: new Map([[SESSION_ID, []]]),
       snapshots: new Map(),
       availability: new Map([[SESSION_ID, true]]),
+      vmAvailability: new Map([[SESSION_ID, true]]),
       loading: new Map([[SESSION_ID, false]]),
     });
     render(<ProxmoxPanel sessionId={SESSION_ID} />);
-    expect(screen.getByRole("button", { name: /Stop/i })).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /Reboot/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Stop debian-dev/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Reboot debian-dev/i })).toBeInTheDocument();
   });
 
   it("renders Start button for stopped containers", () => {
@@ -170,55 +261,91 @@ describe("ProxmoxPanel", () => {
       containers: new Map([
         [SESSION_ID, [{ vmid: 101, status: "stopped", name: "ubuntu-web" }]],
       ]),
+      vms: new Map([[SESSION_ID, []]]),
       snapshots: new Map(),
       availability: new Map([[SESSION_ID, true]]),
+      vmAvailability: new Map([[SESSION_ID, true]]),
       loading: new Map([[SESSION_ID, false]]),
     });
     render(<ProxmoxPanel sessionId={SESSION_ID} />);
-    expect(screen.getByRole("button", { name: /Start/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Start ubuntu-web/i })).toBeInTheDocument();
   });
 
-  it("renders Shell button for running containers", () => {
+  it("renders Shell button for running LXC containers", () => {
     useProxmoxStore.setState({
       containers: new Map([
         [SESSION_ID, [{ vmid: 100, status: "running", name: "debian-dev" }]],
       ]),
+      vms: new Map([[SESSION_ID, []]]),
       snapshots: new Map(),
       availability: new Map([[SESSION_ID, true]]),
+      vmAvailability: new Map([[SESSION_ID, true]]),
       loading: new Map([[SESSION_ID, false]]),
     });
     render(<ProxmoxPanel sessionId={SESSION_ID} />);
-    expect(
-      screen.getByRole("button", { name: /Shell/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Shell/i })).toBeInTheDocument();
   });
 
-  it("renders Snapshots button per row", () => {
+  it("renders Snapshots button per LXC row", () => {
     useProxmoxStore.setState({
       containers: new Map([
         [SESSION_ID, [{ vmid: 100, status: "running", name: "debian-dev" }]],
       ]),
+      vms: new Map([[SESSION_ID, []]]),
       snapshots: new Map(),
       availability: new Map([[SESSION_ID, true]]),
+      vmAvailability: new Map([[SESSION_ID, true]]),
       loading: new Map([[SESSION_ID, false]]),
     });
     render(<ProxmoxPanel sessionId={SESSION_ID} />);
-    expect(
-      screen.getByRole("button", { name: /Snapshots/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Snapshots/i })).toBeInTheDocument();
   });
 
-  it("has accessible table structure", () => {
+  it("renders Snapshots button per VM row", () => {
+    useProxmoxStore.setState({
+      containers: new Map([[SESSION_ID, []]]),
+      vms: new Map([
+        [SESSION_ID, [{ vmid: 200, name: "win-server", status: "stopped" }]],
+      ]),
+      snapshots: new Map(),
+      availability: new Map([[SESSION_ID, true]]),
+      vmAvailability: new Map([[SESSION_ID, true]]),
+      loading: new Map([[SESSION_ID, false]]),
+    });
+    render(<ProxmoxPanel sessionId={SESSION_ID} />);
+    expect(screen.getByRole("button", { name: /Snapshots/i })).toBeInTheDocument();
+  });
+
+  it("has accessible table structure for containers", () => {
     useProxmoxStore.setState({
       containers: new Map([
         [SESSION_ID, [{ vmid: 100, status: "stopped", name: "debian-dev" }]],
       ]),
+      vms: new Map([[SESSION_ID, []]]),
       snapshots: new Map(),
       availability: new Map([[SESSION_ID, true]]),
+      vmAvailability: new Map([[SESSION_ID, true]]),
       loading: new Map([[SESSION_ID, false]]),
     });
     render(<ProxmoxPanel sessionId={SESSION_ID} />);
     expect(screen.getByRole("table")).toBeInTheDocument();
+  });
+
+  it("has accessible table structures for both sections when both present", () => {
+    useProxmoxStore.setState({
+      containers: new Map([
+        [SESSION_ID, [{ vmid: 100, status: "stopped", name: "debian-dev" }]],
+      ]),
+      vms: new Map([
+        [SESSION_ID, [{ vmid: 200, name: "win-server", status: "running" }]],
+      ]),
+      snapshots: new Map(),
+      availability: new Map([[SESSION_ID, true]]),
+      vmAvailability: new Map([[SESSION_ID, true]]),
+      loading: new Map([[SESSION_ID, false]]),
+    });
+    render(<ProxmoxPanel sessionId={SESSION_ID} />);
+    expect(screen.getAllByRole("table")).toHaveLength(2);
   });
 });
 
@@ -260,8 +387,10 @@ describe("ProxmoxPanel shell action uses vmid (not name)", () => {
           ],
         ],
       ]),
+      vms: new Map([["sess-shell", []]]),
       snapshots: new Map(),
       availability: new Map([["sess-shell", true]]),
+      vmAvailability: new Map([["sess-shell", true]]),
       loading: new Map([["sess-shell", false]]),
     });
     mockTauriInvoke.mockResolvedValue({ snapshots: [] });

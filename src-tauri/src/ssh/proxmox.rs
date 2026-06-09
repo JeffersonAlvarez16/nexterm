@@ -1,4 +1,4 @@
-// ssh/proxmox.rs — Remote Proxmox LXC management primitives
+// ssh/proxmox.rs — Remote Proxmox guest management primitives (LXC + QEMU VM)
 //
 // Pure logic layer: no SSH, no Tauri. All functions are synchronous
 // and fully unit-testable without a live connection.
@@ -6,12 +6,13 @@
 // Responsibilities:
 //   1. parse_pct_list          — parse `pct list` whitespace-delimited table
 //   2. parse_pct_listsnapshot  — parse `pct listsnapshot <vmid>` output
-//   3. validate_vmid           — injection-safe validator: digit-only char-loop + u32 range
-//   4. validate_snapshot_name  — injection-safe validator: charset + length + starts-with-letter
-//   5. build_lifecycle_command — compose pct start/stop/reboot from validated vmid (u32)
-//   6. build_listsnapshot_command, build_snapshot_command,
-//      build_rollback_command, build_delsnapshot_command
-//   7. is_pct_unavailable      — heuristic: not installed / permission denied
+//   3. parse_qm_list           — parse `qm list` whitespace-delimited table (different columns)
+//   4. validate_vmid           — injection-safe validator: digit-only char-loop + u32 range
+//   5. validate_snapshot_name  — injection-safe validator: charset + length + starts-with-letter
+//   6. build_lifecycle_command — compose pct/qm start/stop/reboot from GuestKind + validated vmid
+//   7. build_listsnapshot_command, build_snapshot_command,
+//      build_rollback_command, build_delsnapshot_command — all GuestKind-aware
+//   8. is_pct_unavailable      — heuristic: not installed / permission denied
 //
 // INJECTION SAFETY (critical):
 //   VMIDs are u32 integers (100–999999999). Pure digit-only char-loop + parse::<u32>()
@@ -21,9 +22,10 @@
 //   Snapshot names: pure char-loop — len 1..=40, first byte ASCII alphabetic,
 //   rest ASCII alphanumeric | '_' | '-' (no dots). NO regex crate.
 //
-//   Parse-source defense-in-depth: parse_pct_list drops rows whose VMID fails
-//   validate_vmid; parse_pct_listsnapshot drops snapshots whose name fails
-//   validate_snapshot_name. No unsafe value ever reaches the store or pct-enter PTY.
+//   Parse-source defense-in-depth: parse_pct_list and parse_qm_list drop rows
+//   whose VMID fails validate_vmid; parse_pct_listsnapshot drops snapshots whose
+//   name fails validate_snapshot_name. No unsafe value ever reaches the store or
+//   the shell command.
 
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +36,19 @@ use crate::error::AppError;
 /// A validated Proxmox container ID (CTID).
 /// Stored as u32; range 100..=999_999_999.
 pub type ProxmoxVmid = u32;
+
+/// Discriminator for Proxmox guest kind.
+///
+/// Controls which CLI tool (`pct` or `qm`) the command builders emit.
+/// `Lxc` is the default and mirrors all pre-existing behaviour.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum GuestKind {
+    /// LXC container — managed via `pct`.
+    Lxc,
+    /// QEMU virtual machine — managed via `qm`.
+    Vm,
+}
 
 /// A single row from `pct list`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -47,7 +62,22 @@ pub struct LxcRow {
     pub name: String,
 }
 
-/// A single snapshot from `pct listsnapshot <vmid>`.
+/// A single row from `qm list`.
+///
+/// `qm list` columns: `VMID  NAME  STATUS  MEM(MB)  BOOTDISK(GB)  PID`
+/// PID may be blank for stopped VMs (Proxmox emits an empty field).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct VmRow {
+    /// VM VMID (validated u32, 100..=999_999_999).
+    pub vmid: ProxmoxVmid,
+    /// VM name.
+    pub name: String,
+    /// VM status: "running", "stopped", etc.
+    pub status: String,
+}
+
+/// A single snapshot from `pct listsnapshot <vmid>` / `qm listsnapshot <vmid>`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SnapshotRow {
@@ -55,7 +85,7 @@ pub struct SnapshotRow {
     pub name: String,
 }
 
-/// Lifecycle action a user can trigger on an LXC container.
+/// Lifecycle action a user can trigger on an LXC container or QEMU VM.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum LxcAction {
@@ -151,34 +181,109 @@ pub fn validate_snapshot_name(name: &str) -> Result<&str, AppError> {
 
 // ─── Command builders ─────────────────────────────────────────────────────────
 
-/// Build `pct start|stop|reboot <vmid>` from a validated VMID.
-pub fn build_lifecycle_command(action: &LxcAction, vmid: ProxmoxVmid) -> String {
+/// CLI tool name for a given guest kind.
+///
+/// `Lxc` → `"pct"`, `Vm` → `"qm"`.
+/// All command builders use this to pick the right binary — the raw string
+/// never comes from user input.
+fn cli(kind: &GuestKind) -> &'static str {
+    match kind {
+        GuestKind::Lxc => "pct",
+        GuestKind::Vm => "qm",
+    }
+}
+
+/// Build `pct|qm start|stop|reboot <vmid>` from a validated VMID.
+///
+/// Passing `GuestKind::Lxc` produces the same output as before, preserving
+/// backward compatibility for all existing LXC callers.
+pub fn build_lifecycle_command(
+    action: &LxcAction,
+    vmid: ProxmoxVmid,
+    kind: &GuestKind,
+) -> String {
     let verb = match action {
         LxcAction::Start => "start",
         LxcAction::Stop => "stop",
         LxcAction::Reboot => "reboot",
     };
-    format!("pct {verb} {vmid}")
+    format!("{} {verb} {vmid}", cli(kind))
 }
 
-/// Build `pct listsnapshot <vmid>`.
-pub fn build_listsnapshot_command(vmid: ProxmoxVmid) -> String {
-    format!("pct listsnapshot {vmid}")
+/// Build `pct|qm listsnapshot <vmid>`.
+pub fn build_listsnapshot_command(vmid: ProxmoxVmid, kind: &GuestKind) -> String {
+    format!("{} listsnapshot {vmid}", cli(kind))
 }
 
-/// Build `pct snapshot <vmid> <name>` (create snapshot).
-pub fn build_snapshot_command(vmid: ProxmoxVmid, name: &str) -> String {
-    format!("pct snapshot {vmid} {name}")
+/// Build `pct|qm snapshot <vmid> <name>` (create snapshot).
+pub fn build_snapshot_command(vmid: ProxmoxVmid, name: &str, kind: &GuestKind) -> String {
+    format!("{} snapshot {vmid} {name}", cli(kind))
 }
 
-/// Build `pct rollback <vmid> <name>`.
-pub fn build_rollback_command(vmid: ProxmoxVmid, name: &str) -> String {
-    format!("pct rollback {vmid} {name}")
+/// Build `pct|qm rollback <vmid> <name>`.
+pub fn build_rollback_command(vmid: ProxmoxVmid, name: &str, kind: &GuestKind) -> String {
+    format!("{} rollback {vmid} {name}", cli(kind))
 }
 
-/// Build `pct delsnapshot <vmid> <name>`.
-pub fn build_delsnapshot_command(vmid: ProxmoxVmid, name: &str) -> String {
-    format!("pct delsnapshot {vmid} {name}")
+/// Build `pct delsnapshot <vmid> <name>` / `qm delsnapshot <vmid> <name>`.
+pub fn build_delsnapshot_command(vmid: ProxmoxVmid, name: &str, kind: &GuestKind) -> String {
+    format!("{} delsnapshot {vmid} {name}", cli(kind))
+}
+
+// ─── qm list output parser ───────────────────────────────────────────────────
+
+/// Parse the stdout of `qm list`.
+///
+/// Output format (whitespace-delimited):
+/// ```text
+///       VMID NAME                 STATUS     MEM(MB)    BOOTDISK(GB) PID
+///        100 debian-vm            running    2048               32.00 12345
+///        101 ubuntu-server        stopped    1024               20.00
+/// ```
+///
+/// Column order (0-indexed after split_whitespace):
+///   col[0] = VMID, col[1] = NAME, col[2] = STATUS
+///   col[3] = MEM(MB), col[4] = BOOTDISK(GB), col[5] = PID (may be absent for stopped VMs)
+///
+/// Parsing strategy:
+///   - First line (header) is skipped.
+///   - Each subsequent non-blank line is split on whitespace.
+///   - Minimum 3 tokens required (VMID + NAME + STATUS).
+///   - Rows where VMID fails `validate_vmid` are silently dropped (defense-in-depth).
+///   - PID column is intentionally ignored.
+///
+/// NOTE: `qm list` has NAME before STATUS, unlike `pct list` (Status before Name).
+/// This is why a separate parser is required — do NOT reuse parse_pct_list.
+pub fn parse_qm_list(stdout: &str) -> Vec<VmRow> {
+    let mut rows = Vec::new();
+    let mut lines = stdout.lines();
+
+    // Skip the header line.
+    lines.next();
+
+    for line in lines {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        // Need at least VMID + NAME + STATUS (3 tokens minimum).
+        if cols.len() < 3 {
+            continue;
+        }
+        // Validate VMID at parse source — drop row if invalid.
+        let vmid = match validate_vmid(cols[0]) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        // col[1] = NAME, col[2] = STATUS (qm list column order)
+        let name = cols[1].to_string();
+        let status = cols[2].to_string();
+
+        rows.push(VmRow { vmid, name, status });
+    }
+
+    rows
 }
 
 // ─── pct not-available detection ─────────────────────────────────────────────
@@ -621,12 +726,12 @@ mod tests {
         assert_eq!(rows[1].name, "snap2");
     }
 
-    // ── WU2: command builders ────────────────────────────────────────────────
+    // ── WU2: command builders (LXC / GuestKind::Lxc) ────────────────────────
 
     #[test]
     fn build_lifecycle_start() {
         assert_eq!(
-            build_lifecycle_command(&LxcAction::Start, 100),
+            build_lifecycle_command(&LxcAction::Start, 100, &GuestKind::Lxc),
             "pct start 100"
         );
     }
@@ -634,7 +739,7 @@ mod tests {
     #[test]
     fn build_lifecycle_stop() {
         assert_eq!(
-            build_lifecycle_command(&LxcAction::Stop, 100),
+            build_lifecycle_command(&LxcAction::Stop, 100, &GuestKind::Lxc),
             "pct stop 100"
         );
     }
@@ -642,20 +747,23 @@ mod tests {
     #[test]
     fn build_lifecycle_reboot() {
         assert_eq!(
-            build_lifecycle_command(&LxcAction::Reboot, 100),
+            build_lifecycle_command(&LxcAction::Reboot, 100, &GuestKind::Lxc),
             "pct reboot 100"
         );
     }
 
     #[test]
     fn build_listsnapshot_command_fmt() {
-        assert_eq!(build_listsnapshot_command(101), "pct listsnapshot 101");
+        assert_eq!(
+            build_listsnapshot_command(101, &GuestKind::Lxc),
+            "pct listsnapshot 101"
+        );
     }
 
     #[test]
     fn build_snapshot_command_fmt() {
         assert_eq!(
-            build_snapshot_command(101, "snap1"),
+            build_snapshot_command(101, "snap1", &GuestKind::Lxc),
             "pct snapshot 101 snap1"
         );
     }
@@ -663,7 +771,7 @@ mod tests {
     #[test]
     fn build_rollback_command_fmt() {
         assert_eq!(
-            build_rollback_command(101, "snap1"),
+            build_rollback_command(101, "snap1", &GuestKind::Lxc),
             "pct rollback 101 snap1"
         );
     }
@@ -671,9 +779,202 @@ mod tests {
     #[test]
     fn build_delsnapshot_command_fmt() {
         assert_eq!(
-            build_delsnapshot_command(101, "snap1"),
+            build_delsnapshot_command(101, "snap1", &GuestKind::Lxc),
             "pct delsnapshot 101 snap1"
         );
+    }
+
+    // ── WU-VM: parse_qm_list ─────────────────────────────────────────────────
+
+    #[test]
+    fn parse_qm_list_empty_string_returns_empty_vec() {
+        assert!(parse_qm_list("").is_empty());
+    }
+
+    #[test]
+    fn parse_qm_list_header_only_returns_empty_vec() {
+        let input = "      VMID NAME                 STATUS     MEM(MB)    BOOTDISK(GB) PID\n";
+        assert!(parse_qm_list(input).is_empty());
+    }
+
+    #[test]
+    fn parse_qm_list_single_running_row() {
+        let input = concat!(
+            "      VMID NAME                 STATUS     MEM(MB)    BOOTDISK(GB) PID\n",
+            "       100 debian-vm            running    2048               32.00 12345\n",
+        );
+        let rows = parse_qm_list(input);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].vmid, 100);
+        assert_eq!(rows[0].name, "debian-vm");
+        assert_eq!(rows[0].status, "running");
+    }
+
+    #[test]
+    fn parse_qm_list_single_stopped_row_blank_pid() {
+        // PID column absent for stopped VMs — only 5 tokens after split_whitespace
+        let input = concat!(
+            "      VMID NAME                 STATUS     MEM(MB)    BOOTDISK(GB) PID\n",
+            "       101 ubuntu-server        stopped    1024               20.00\n",
+        );
+        let rows = parse_qm_list(input);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].vmid, 101);
+        assert_eq!(rows[0].name, "ubuntu-server");
+        assert_eq!(rows[0].status, "stopped");
+    }
+
+    #[test]
+    fn parse_qm_list_multiple_rows_mixed_status() {
+        let input = concat!(
+            "      VMID NAME                 STATUS     MEM(MB)    BOOTDISK(GB) PID\n",
+            "       100 debian-vm            running    2048               32.00 12345\n",
+            "       101 ubuntu-server        stopped    1024               20.00\n",
+            "       200 windows-server       running    8192              100.00 99999\n",
+        );
+        let rows = parse_qm_list(input);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].vmid, 100);
+        assert_eq!(rows[0].status, "running");
+        assert_eq!(rows[1].vmid, 101);
+        assert_eq!(rows[1].status, "stopped");
+        assert_eq!(rows[2].vmid, 200);
+        assert_eq!(rows[2].name, "windows-server");
+    }
+
+    #[test]
+    fn parse_qm_list_skips_blank_lines() {
+        let input = concat!(
+            "      VMID NAME                 STATUS     MEM(MB)    BOOTDISK(GB) PID\n",
+            "\n",
+            "       100 my-vm                running    2048               32.00 1\n",
+            "\n",
+        );
+        let rows = parse_qm_list(input);
+        assert_eq!(rows.len(), 1);
+    }
+
+    #[test]
+    fn parse_qm_list_drops_row_with_non_numeric_vmid() {
+        let input = concat!(
+            "      VMID NAME                 STATUS     MEM(MB)    BOOTDISK(GB) PID\n",
+            "       abc evil-vm              running    1024               10.00 1\n",
+            "       100 legit-vm             stopped    1024               10.00\n",
+        );
+        let rows = parse_qm_list(input);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].vmid, 100);
+    }
+
+    #[test]
+    fn parse_qm_list_drops_row_with_out_of_range_vmid() {
+        let input = concat!(
+            "      VMID NAME                 STATUS     MEM(MB)    BOOTDISK(GB) PID\n",
+            "        99 too-small            stopped    512                8.00\n",
+            "       100 legit-vm             running    1024               10.00 1\n",
+        );
+        let rows = parse_qm_list(input);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].vmid, 100);
+    }
+
+    #[test]
+    fn parse_qm_list_drops_row_with_injection_vmid() {
+        let input = concat!(
+            "      VMID NAME                 STATUS     MEM(MB)    BOOTDISK(GB) PID\n",
+            "   100;rm evil-vm              running    1024               10.00 1\n",
+            "       101 legit-vm             stopped    512                8.00\n",
+        );
+        let rows = parse_qm_list(input);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].vmid, 101);
+    }
+
+    #[test]
+    fn parse_qm_list_name_is_col1_not_col_last() {
+        // Contrast with pct list where Name is the LAST token.
+        // For qm list, NAME is col[1] regardless of how many columns follow.
+        let input = concat!(
+            "      VMID NAME                 STATUS     MEM(MB)    BOOTDISK(GB) PID\n",
+            "       100 my-vm                running    2048               32.00 12345\n",
+        );
+        let rows = parse_qm_list(input);
+        assert_eq!(rows[0].name, "my-vm");
+        assert_eq!(rows[0].status, "running");
+    }
+
+    // ── WU-VM: command builders (QEMU / GuestKind::Vm) ───────────────────────
+
+    #[test]
+    fn build_vm_lifecycle_start() {
+        assert_eq!(
+            build_lifecycle_command(&LxcAction::Start, 100, &GuestKind::Vm),
+            "qm start 100"
+        );
+    }
+
+    #[test]
+    fn build_vm_lifecycle_stop() {
+        assert_eq!(
+            build_lifecycle_command(&LxcAction::Stop, 100, &GuestKind::Vm),
+            "qm stop 100"
+        );
+    }
+
+    #[test]
+    fn build_vm_lifecycle_reboot() {
+        assert_eq!(
+            build_lifecycle_command(&LxcAction::Reboot, 100, &GuestKind::Vm),
+            "qm reboot 100"
+        );
+    }
+
+    #[test]
+    fn build_vm_listsnapshot_command_fmt() {
+        assert_eq!(
+            build_listsnapshot_command(101, &GuestKind::Vm),
+            "qm listsnapshot 101"
+        );
+    }
+
+    #[test]
+    fn build_vm_snapshot_command_fmt() {
+        assert_eq!(
+            build_snapshot_command(101, "snap1", &GuestKind::Vm),
+            "qm snapshot 101 snap1"
+        );
+    }
+
+    #[test]
+    fn build_vm_rollback_command_fmt() {
+        assert_eq!(
+            build_rollback_command(101, "snap1", &GuestKind::Vm),
+            "qm rollback 101 snap1"
+        );
+    }
+
+    #[test]
+    fn build_vm_delsnapshot_command_fmt() {
+        assert_eq!(
+            build_delsnapshot_command(101, "snap1", &GuestKind::Vm),
+            "qm delsnapshot 101 snap1"
+        );
+    }
+
+    // ── WU-VM: GuestKind::Lxc still produces pct commands ────────────────────
+
+    #[test]
+    fn lxc_kind_still_produces_pct_prefix() {
+        // Regression: GuestKind::Lxc must never produce "qm ..."
+        let cmd = build_lifecycle_command(&LxcAction::Start, 200, &GuestKind::Lxc);
+        assert!(cmd.starts_with("pct "), "Expected pct prefix, got: {cmd}");
+    }
+
+    #[test]
+    fn vm_kind_never_produces_pct_prefix() {
+        // GuestKind::Vm must never produce "pct ..."
+        let cmd = build_lifecycle_command(&LxcAction::Start, 200, &GuestKind::Vm);
+        assert!(cmd.starts_with("qm "), "Expected qm prefix, got: {cmd}");
     }
 
     // ── WU3: is_pct_unavailable ──────────────────────────────────────────────

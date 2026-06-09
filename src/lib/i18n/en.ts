@@ -602,9 +602,12 @@ export const en = {
   // Proxmox panel
   "proxmox.unavailable":
     "Not a Proxmox host or insufficient permissions (pct requires root)",
-  "proxmox.loading": "Loading LXC containers...",
-  "proxmox.empty": "No LXC containers found",
+  "proxmox.loading": "Loading Proxmox guests...",
+  "proxmox.empty": "No containers or virtual machines found",
   "proxmox.refresh": "Refresh",
+  // Section headings for the two guest types
+  "proxmox.containers": "Containers",
+  "proxmox.virtualMachines": "Virtual Machines",
   "proxmox.col.vmid": "VMID",
   "proxmox.col.name": "Name",
   "proxmox.col.status": "Status",
@@ -623,7 +626,7 @@ export const en = {
   "proxmox.snapshot.rollback.confirm": "Confirm Rollback",
   "proxmox.snapshot.rollback.cancel": "Cancel",
   "proxmox.snapshot.rollback.warning":
-    "Warning: rollback will discard the current container state",
+    "Warning: rollback will discard the current guest state",
   "proxmox.snapshot.delete.arm": "Delete",
   "proxmox.snapshot.delete.confirm": "Confirm Delete",
   "proxmox.snapshot.delete.cancel": "Cancel",

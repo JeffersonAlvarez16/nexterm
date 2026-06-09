@@ -331,8 +331,9 @@ pub fn run() {
             commands::docker::docker_list_containers,
             commands::docker::docker_lifecycle_action,
             commands::docker::docker_get_logs,
-            // Proxmox LXC management via SSH (pct CLI)
+            // Proxmox guest management via SSH (pct for LXC, qm for QEMU VMs)
             commands::proxmox::proxmox_list_lxc,
+            commands::proxmox::proxmox_list_vms,
             commands::proxmox::proxmox_lifecycle_action,
             commands::proxmox::proxmox_list_snapshots,
             commands::proxmox::proxmox_create_snapshot,

@@ -1,16 +1,18 @@
-// features/proxmox/ProxmoxPanel.tsx — Proxmox LXC management panel
+// features/proxmox/ProxmoxPanel.tsx — Proxmox LXC + QEMU VM management panel
 //
-// Renders:
-//   - LXC table with VMID, name, status badges, and per-row action buttons
-//   - Lifecycle actions: start / stop / reboot
-//   - Interactive shell: pct enter <vmid> via write_terminal (mirrors DockerPanel)
-//   - Snapshot sub-view per row: list / create / rollback (confirm) / delete (confirm)
-//   - SnapshotConfirmDialog for destructive rollback + delete
-//   - "pct not available" state (permissions or not a Proxmox host)
-//   - Refresh button in the header area
+// Renders two clearly separated sections:
+//   - "Containers" — LXC table with VMID, name, status badges, per-row action buttons
+//   - "Virtual Machines" — QEMU VM table with the same action set
+//
+// Actions per row (both LXC and VM):
+//   - Lifecycle: Start / Stop / Reboot (routed with the correct GuestKind)
+//   - Interactive shell: pct enter <vmid> for LXC (Shell button, LXC only)
+//   - Snapshots: list / create / rollback (confirm) / delete (confirm)
+//
+// The `kind` parameter ("lxc" or "vm") is always passed to every tauriInvoke
+// call so the Rust backend selects the right CLI tool (pct vs qm).
 //
 // Shell injection uses the validated VMID (numeric string), never the name.
-// Mirrors DockerPanel.handleShell / buildDockerExecCommand exactly.
 
 import React, { useState } from "react";
 
@@ -20,7 +22,7 @@ import { useProxmoxStore, snapshotKey } from "../../stores/proxmoxStore";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useProxmox } from "./useProxmox";
 import { SnapshotConfirmDialog } from "./SnapshotConfirmDialog";
-import type { LxcRow, SnapshotRow } from "../../stores/proxmoxStore";
+import type { LxcRow, VmRow, SnapshotRow, GuestKind } from "../../stores/proxmoxStore";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -88,22 +90,33 @@ export function buildPctEnterCommand(vmid: string): string {
   return `pct enter ${vmid}\n`;
 }
 
+// ─── GuestRow — common shape accepted by shared components ───────────────────
+
+/** Minimal shared shape for a guest row (LXC or VM). */
+interface GuestRow {
+  vmid: number;
+  name: string;
+  status: string;
+}
+
 // ─── SnapshotSubView ─────────────────────────────────────────────────────────
 
 interface SnapshotSubViewProps {
   sessionId: string;
-  container: LxcRow;
+  guest: GuestRow;
+  /** Guest kind: "lxc" → pct commands, "vm" → qm commands. */
+  kind: GuestKind;
   onClose: () => void;
 }
 
-function SnapshotSubView({ sessionId, container, onClose }: SnapshotSubViewProps) {
+function SnapshotSubView({ sessionId, guest, kind, onClose }: SnapshotSubViewProps) {
   const { t } = useI18n();
   const [newSnapName, setNewSnapName] = useState("");
   const [creating, setCreating] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmState, setConfirmState] = useState<SnapshotConfirmState>(null);
 
-  const key = snapshotKey(sessionId, container.vmid);
+  const key = snapshotKey(sessionId, guest.vmid);
   const setSnapshots = useProxmoxStore((s) => s.setSnapshots);
   const snapshotsOrUndef = useProxmoxStore((s) => s.snapshots.get(key));
   const snapshots: SnapshotRow[] = snapshotsOrUndef ?? [];
@@ -112,9 +125,9 @@ function SnapshotSubView({ sessionId, container, onClose }: SnapshotSubViewProps
     try {
       const result = await tauriInvoke<{ snapshots: SnapshotRow[] }>(
         "proxmox_list_snapshots",
-        { sessionId, vmid: String(container.vmid) },
+        { sessionId, vmid: String(guest.vmid), kind },
       );
-      setSnapshots(sessionId, container.vmid, result.snapshots);
+      setSnapshots(sessionId, guest.vmid, result.snapshots);
     } catch (err) {
       console.error("[ProxmoxPanel] proxmox_list_snapshots failed:", err);
     }
@@ -128,8 +141,9 @@ function SnapshotSubView({ sessionId, container, onClose }: SnapshotSubViewProps
     try {
       await tauriInvoke("proxmox_create_snapshot", {
         sessionId,
-        vmid: String(container.vmid),
+        vmid: String(guest.vmid),
         snapshotName: name,
+        kind,
       });
       setNewSnapName("");
       await loadSnapshots();
@@ -146,8 +160,9 @@ function SnapshotSubView({ sessionId, container, onClose }: SnapshotSubViewProps
     try {
       await tauriInvoke("proxmox_rollback_snapshot", {
         sessionId,
-        vmid: String(container.vmid),
+        vmid: String(guest.vmid),
         snapshotName,
+        kind,
       });
       await loadSnapshots();
     } catch (err) {
@@ -161,8 +176,9 @@ function SnapshotSubView({ sessionId, container, onClose }: SnapshotSubViewProps
     try {
       await tauriInvoke("proxmox_delete_snapshot", {
         sessionId,
-        vmid: String(container.vmid),
+        vmid: String(guest.vmid),
         snapshotName,
+        kind,
       });
       await loadSnapshots();
     } catch (err) {
@@ -175,11 +191,11 @@ function SnapshotSubView({ sessionId, container, onClose }: SnapshotSubViewProps
       <td
         colSpan={4}
         className="proxmox-snapshot-subview"
-        aria-label={`${t("proxmox.snapshot.title")}: ${container.name}`}
+        aria-label={`${t("proxmox.snapshot.title")}: ${guest.name}`}
       >
         <div className="proxmox-snapshot-header">
           <span className="proxmox-snapshot-title">
-            {t("proxmox.snapshot.title")}: <strong>{container.name}</strong>
+            {t("proxmox.snapshot.title")}: <strong>{guest.name}</strong>
           </span>
           <button
             type="button"
@@ -225,7 +241,7 @@ function SnapshotSubView({ sessionId, container, onClose }: SnapshotSubViewProps
                       className="proxmox-action-btn"
                       onClick={() =>
                         setConfirmState({
-                          vmid: container.vmid,
+                          vmid: guest.vmid,
                           action: "rollback",
                           snapshotName: snap.name,
                         })
@@ -239,7 +255,7 @@ function SnapshotSubView({ sessionId, container, onClose }: SnapshotSubViewProps
                       className="proxmox-action-btn proxmox-action-btn--danger"
                       onClick={() =>
                         setConfirmState({
-                          vmid: container.vmid,
+                          vmid: guest.vmid,
                           action: "delete",
                           snapshotName: snap.name,
                         })
@@ -280,6 +296,122 @@ function SnapshotSubView({ sessionId, container, onClose }: SnapshotSubViewProps
   );
 }
 
+// ─── GuestTable — shared table renderer for both LXC and VM rows ─────────────
+
+interface GuestTableProps {
+  sessionId: string;
+  guests: GuestRow[];
+  kind: GuestKind;
+  /** Whether the Shell button should be shown (LXC only). */
+  showShell: boolean;
+  expandedVmid: number | null;
+  onLifecycle: (vmid: number, action: "start" | "stop" | "reboot", kind: GuestKind) => void;
+  onShell: (guest: GuestRow) => void;
+  onSnapshotsToggle: (guest: GuestRow, kind: GuestKind) => void;
+  onSnapshotClose: () => void;
+}
+
+function GuestTable({
+  sessionId,
+  guests,
+  kind,
+  showShell,
+  expandedVmid,
+  onLifecycle,
+  onShell,
+  onSnapshotsToggle,
+  onSnapshotClose,
+}: GuestTableProps) {
+  const { t } = useI18n();
+  return (
+    <table className="proxmox-container-table">
+      <thead>
+        <tr>
+          <th scope="col">{t("proxmox.col.vmid")}</th>
+          <th scope="col">{t("proxmox.col.name")}</th>
+          <th scope="col">{t("proxmox.col.status")}</th>
+          <th scope="col">{t("proxmox.col.actions")}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {guests.map((g) => (
+          <React.Fragment key={g.vmid}>
+            <tr>
+              <td className="proxmox-container-vmid">{g.vmid}</td>
+              <td className="proxmox-container-name">{g.name}</td>
+              <td>
+                <span className={`proxmox-status-badge ${statusBadgeClass(g.status)}`}>
+                  {g.status}
+                </span>
+              </td>
+              <td className="proxmox-container-actions">
+                <div className="proxmox-action-group">
+                  {g.status !== "running" && (
+                    <button
+                      type="button"
+                      className="proxmox-action-btn"
+                      onClick={() => onLifecycle(g.vmid, "start", kind)}
+                      aria-label={`${t("proxmox.action.start")} ${g.name}`}
+                    >
+                      {t("proxmox.action.start")}
+                    </button>
+                  )}
+                  {g.status === "running" && (
+                    <button
+                      type="button"
+                      className="proxmox-action-btn"
+                      onClick={() => onLifecycle(g.vmid, "stop", kind)}
+                      aria-label={`${t("proxmox.action.stop")} ${g.name}`}
+                    >
+                      {t("proxmox.action.stop")}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="proxmox-action-btn"
+                    onClick={() => onLifecycle(g.vmid, "reboot", kind)}
+                    aria-label={`${t("proxmox.action.reboot")} ${g.name}`}
+                  >
+                    {t("proxmox.action.reboot")}
+                  </button>
+                  {showShell && g.status === "running" && (
+                    <button
+                      type="button"
+                      className="proxmox-action-btn"
+                      onClick={() => onShell(g)}
+                      aria-label={`${t("proxmox.action.shell")} ${g.name}`}
+                    >
+                      {t("proxmox.action.shell")}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={`proxmox-action-btn${expandedVmid === g.vmid ? " proxmox-action-btn--active" : ""}`}
+                    onClick={() => onSnapshotsToggle(g, kind)}
+                    aria-label={`${t("proxmox.action.snapshots")} ${g.name}`}
+                    aria-expanded={expandedVmid === g.vmid}
+                  >
+                    {t("proxmox.action.snapshots")}
+                  </button>
+                </div>
+              </td>
+            </tr>
+            {expandedVmid === g.vmid && (
+              <SnapshotSubView
+                key={`snap-${g.vmid}`}
+                sessionId={sessionId}
+                guest={g}
+                kind={kind}
+                onClose={onSnapshotClose}
+              />
+            )}
+          </React.Fragment>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 // ─── ProxmoxPanel ─────────────────────────────────────────────────────────────
 
 interface ProxmoxPanelProps {
@@ -291,20 +423,22 @@ export function ProxmoxPanel({ sessionId }: ProxmoxPanelProps) {
   const { refresh } = useProxmox(sessionId);
 
   const [actionError, setActionError] = useState<string | null>(null);
+  // Expanded snapshot sub-view: tracks (vmid, kind) so LXC 100 and VM 100
+  // don't collide if a Proxmox host has both with the same VMID.
   const [expandedVmid, setExpandedVmid] = useState<number | null>(null);
+  const [expandedKind, setExpandedKind] = useState<GuestKind | null>(null);
 
-  const containersOrUndef = useProxmoxStore((s) =>
-    s.containers.get(sessionId),
-  );
+  const containersOrUndef = useProxmoxStore((s) => s.containers.get(sessionId));
   const containers: LxcRow[] = containersOrUndef ?? [];
+  const vmsOrUndef = useProxmoxStore((s) => s.vms.get(sessionId));
+  const vms: VmRow[] = vmsOrUndef ?? [];
+
   const availability = useProxmoxStore((s) => s.availability.get(sessionId));
-  const loading = useProxmoxStore(
-    (s) => s.loading.get(sessionId) ?? false,
-  );
+  const loading = useProxmoxStore((s) => s.loading.get(sessionId) ?? false);
 
-  // ── pct not available ────────────────────────────────────────────────────
+  // ── pct not available (LXC side only — show warning, VMs may still work) ──
 
-  if (availability === false) {
+  if (availability === false && vms.length === 0) {
     return (
       <div className="proxmox-panel proxmox-unavailable" role="status">
         {t("proxmox.unavailable")}
@@ -327,6 +461,7 @@ export function ProxmoxPanel({ sessionId }: ProxmoxPanelProps) {
   async function handleLifecycle(
     vmid: number,
     action: "start" | "stop" | "reboot",
+    kind: GuestKind,
   ) {
     setActionError(null);
     try {
@@ -334,6 +469,7 @@ export function ProxmoxPanel({ sessionId }: ProxmoxPanelProps) {
         sessionId,
         vmid: String(vmid),
         action,
+        kind,
       });
       void refresh();
     } catch (err) {
@@ -342,9 +478,9 @@ export function ProxmoxPanel({ sessionId }: ProxmoxPanelProps) {
     }
   }
 
-  // ── Interactive shell handler — mirrors DockerPanel.handleShell ──────────
+  // ── Interactive shell handler (LXC only) — mirrors DockerPanel.handleShell ─
 
-  async function handleShell(container: LxcRow) {
+  async function handleShell(guest: GuestRow) {
     const isReady = (id: string | null | undefined): id is string =>
       !!id && !id.startsWith("pending-");
 
@@ -362,8 +498,8 @@ export function ProxmoxPanel({ sessionId }: ProxmoxPanelProps) {
       return;
     }
 
-    // Use the validated numeric vmid (from the LxcRow), never the name.
-    const cmd = buildPctEnterCommand(String(container.vmid));
+    // Use the validated numeric vmid (from the row), never the name.
+    const cmd = buildPctEnterCommand(String(guest.vmid));
     try {
       await tauriInvoke("write_terminal", {
         sessionId,
@@ -377,27 +513,39 @@ export function ProxmoxPanel({ sessionId }: ProxmoxPanelProps) {
 
   // ── Snapshot sub-view toggle ─────────────────────────────────────────────
 
-  async function handleSnapshotsToggle(container: LxcRow) {
-    if (expandedVmid === container.vmid) {
+  async function handleSnapshotsToggle(guest: GuestRow, kind: GuestKind) {
+    // If same (vmid, kind) is already expanded, collapse it.
+    if (expandedVmid === guest.vmid && expandedKind === kind) {
       setExpandedVmid(null);
+      setExpandedKind(null);
       return;
     }
-    setExpandedVmid(container.vmid);
+    setExpandedVmid(guest.vmid);
+    setExpandedKind(kind);
     // Load snapshots on expand.
     try {
       const result = await tauriInvoke<{ snapshots: SnapshotRow[] }>(
         "proxmox_list_snapshots",
-        { sessionId, vmid: String(container.vmid) },
+        { sessionId, vmid: String(guest.vmid), kind },
       );
       useProxmoxStore
         .getState()
-        .setSnapshots(sessionId, container.vmid, result.snapshots);
+        .setSnapshots(sessionId, guest.vmid, result.snapshots);
     } catch (err) {
       console.error("[ProxmoxPanel] proxmox_list_snapshots failed:", err);
     }
   }
 
-  // ── Container table ───────────────────────────────────────────────────────
+  function handleSnapshotClose() {
+    setExpandedVmid(null);
+    setExpandedKind(null);
+  }
+
+  const hasContainers = containers.length > 0;
+  const hasVms = vms.length > 0;
+  const isEmpty = !hasContainers && !hasVms && !loading;
+
+  // ── Panel ────────────────────────────────────────────────────────────────
 
   return (
     <div className="proxmox-panel">
@@ -421,110 +569,51 @@ export function ProxmoxPanel({ sessionId }: ProxmoxPanelProps) {
       </div>
 
       {/* Empty state */}
-      {containers.length === 0 && !loading && (
+      {isEmpty && (
         <div className="proxmox-empty" role="status">
           {t("proxmox.empty")}
         </div>
       )}
 
-      {/* LXC table */}
-      {containers.length > 0 && (
+      {/* LXC Containers section */}
+      {hasContainers && (
         <section
           className="proxmox-containers"
-          aria-label={t("proxmox.col.name")}
+          aria-label={t("proxmox.containers")}
         >
-          <table className="proxmox-container-table">
-            <thead>
-              <tr>
-                <th scope="col">{t("proxmox.col.vmid")}</th>
-                <th scope="col">{t("proxmox.col.name")}</th>
-                <th scope="col">{t("proxmox.col.status")}</th>
-                <th scope="col">{t("proxmox.col.actions")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {containers.map((c) => (
-                <React.Fragment key={c.vmid}>
-                  <tr>
-                    <td className="proxmox-container-vmid">{c.vmid}</td>
-                    <td className="proxmox-container-name">{c.name}</td>
-                    <td>
-                      <span
-                        className={`proxmox-status-badge ${statusBadgeClass(c.status)}`}
-                      >
-                        {c.status}
-                      </span>
-                    </td>
-                    <td className="proxmox-container-actions">
-                      <div className="proxmox-action-group">
-                        {/* Start — only for non-running */}
-                        {c.status !== "running" && (
-                          <button
-                            type="button"
-                            className="proxmox-action-btn"
-                            onClick={() => handleLifecycle(c.vmid, "start")}
-                            aria-label={`${t("proxmox.action.start")} ${c.name}`}
-                          >
-                            {t("proxmox.action.start")}
-                          </button>
-                        )}
-                        {/* Stop — only for running */}
-                        {c.status === "running" && (
-                          <button
-                            type="button"
-                            className="proxmox-action-btn"
-                            onClick={() => handleLifecycle(c.vmid, "stop")}
-                            aria-label={`${t("proxmox.action.stop")} ${c.name}`}
-                          >
-                            {t("proxmox.action.stop")}
-                          </button>
-                        )}
-                        {/* Reboot — always shown */}
-                        <button
-                          type="button"
-                          className="proxmox-action-btn"
-                          onClick={() => handleLifecycle(c.vmid, "reboot")}
-                          aria-label={`${t("proxmox.action.reboot")} ${c.name}`}
-                        >
-                          {t("proxmox.action.reboot")}
-                        </button>
-                        {/* Shell — only for running */}
-                        {c.status === "running" && (
-                          <button
-                            type="button"
-                            className="proxmox-action-btn"
-                            onClick={() => handleShell(c)}
-                            aria-label={`${t("proxmox.action.shell")} ${c.name}`}
-                          >
-                            {t("proxmox.action.shell")}
-                          </button>
-                        )}
-                        {/* Snapshots toggle */}
-                        <button
-                          type="button"
-                          className={`proxmox-action-btn${expandedVmid === c.vmid ? " proxmox-action-btn--active" : ""}`}
-                          onClick={() => handleSnapshotsToggle(c)}
-                          aria-label={`${t("proxmox.action.snapshots")} ${c.name}`}
-                          aria-expanded={expandedVmid === c.vmid}
-                        >
-                          {t("proxmox.action.snapshots")}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  {/* Snapshot sub-view — inline row below the container row */}
-                  {expandedVmid === c.vmid && (
-                    <SnapshotSubView
-                      key={`snap-${c.vmid}`}
-                      sessionId={sessionId}
-                      container={c}
-                      onClose={() => setExpandedVmid(null)}
-                    />
-                  )}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
+          <h3 className="proxmox-section-heading">{t("proxmox.containers")}</h3>
+          <GuestTable
+            sessionId={sessionId}
+            guests={containers}
+            kind="lxc"
+            showShell={true}
+            expandedVmid={expandedKind === "lxc" ? expandedVmid : null}
+            onLifecycle={handleLifecycle}
+            onShell={handleShell}
+            onSnapshotsToggle={handleSnapshotsToggle}
+            onSnapshotClose={handleSnapshotClose}
+          />
+        </section>
+      )}
+
+      {/* QEMU Virtual Machines section */}
+      {hasVms && (
+        <section
+          className="proxmox-vms"
+          aria-label={t("proxmox.virtualMachines")}
+        >
+          <h3 className="proxmox-section-heading">{t("proxmox.virtualMachines")}</h3>
+          <GuestTable
+            sessionId={sessionId}
+            guests={vms}
+            kind="vm"
+            showShell={false}
+            expandedVmid={expandedKind === "vm" ? expandedVmid : null}
+            onLifecycle={handleLifecycle}
+            onShell={handleShell}
+            onSnapshotsToggle={handleSnapshotsToggle}
+            onSnapshotClose={handleSnapshotClose}
+          />
         </section>
       )}
     </div>

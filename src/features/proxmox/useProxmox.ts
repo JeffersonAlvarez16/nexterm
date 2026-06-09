@@ -1,25 +1,30 @@
-// features/proxmox/useProxmox.ts — Proxmox LXC management hook
+// features/proxmox/useProxmox.ts — Proxmox LXC + QEMU VM management hook
 //
 // Lifecycle:
-//   - On mount (and when sessionId changes): call proxmox_list_lxc
-//   - Populates proxmoxStore with containers and availability state
-//   - Exposes refresh() for manual re-fetch
-//   - Optional 10s poll while the panel is open
+//   - On mount (and when sessionId changes): call proxmox_list_lxc AND proxmox_list_vms
+//   - Populates proxmoxStore with containers, vms, and availability state
+//   - Exposes refresh() for manual re-fetch (refreshes both LXC and VMs)
+//   - Polls every 10 s while the panel is open
 //
 // Poll is stateless — no background Rust task. Each poll is a new
-// proxmox_list_lxc one-shot call. Mirrors useDocker exactly.
+// one-shot call. Mirrors useDocker exactly.
 
 import { useCallback, useEffect, useRef } from "react";
 
 import { tauriInvoke } from "../../lib/tauri";
 import { useProxmoxStore } from "../../stores/proxmoxStore";
-import type { LxcRow } from "../../stores/proxmoxStore";
+import type { LxcRow, VmRow } from "../../stores/proxmoxStore";
 
-// ─── Response shape from proxmox_list_lxc ────────────────────────────────────
+// ─── Response shapes ──────────────────────────────────────────────────────────
 
 interface ListLxcResult {
   containers: LxcRow[];
   pctUnavailable: boolean;
+}
+
+interface ListVmsResult {
+  vms: VmRow[];
+  qmUnavailable: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -30,11 +35,11 @@ const POLL_INTERVAL_MS = 10_000;
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 /**
- * Load and optionally poll Proxmox LXC data for a session.
+ * Load and optionally poll Proxmox LXC + VM data for a session.
  *
  * Call from ProxmoxPanel. The hook:
- *   - Fetches on mount
- *   - Sets proxmoxStore containers + availability
+ *   - Fetches both proxmox_list_lxc and proxmox_list_vms on mount
+ *   - Sets proxmoxStore containers, vms, availability, and vmAvailability
  *   - Polls every 10 s while mounted
  *   - Cleans up on unmount
  *
@@ -42,43 +47,63 @@ const POLL_INTERVAL_MS = 10_000;
  */
 export function useProxmox(sessionId: string) {
   const setLxc = useProxmoxStore((s) => s.setLxc);
+  const setVms = useProxmoxStore((s) => s.setVms);
   const setAvailability = useProxmoxStore((s) => s.setAvailability);
+  const setVmAvailability = useProxmoxStore((s) => s.setVmAvailability);
   const setLoading = useProxmoxStore((s) => s.setLoading);
 
   const mountedRef = useRef(false);
 
-  const fetchContainers = useCallback(async () => {
+  const fetchAll = useCallback(async () => {
     if (!sessionId) return;
 
     setLoading(sessionId, true);
     try {
-      const result = await tauriInvoke<ListLxcResult>("proxmox_list_lxc", {
-        sessionId,
-      });
+      // Fetch LXC containers and QEMU VMs in parallel.
+      const [lxcResult, vmResult] = await Promise.allSettled([
+        tauriInvoke<ListLxcResult>("proxmox_list_lxc", { sessionId }),
+        tauriInvoke<ListVmsResult>("proxmox_list_vms", { sessionId }),
+      ]);
 
-      if (result.pctUnavailable) {
-        setAvailability(sessionId, false);
-        setLxc(sessionId, []);
+      // LXC result
+      if (lxcResult.status === "fulfilled") {
+        if (lxcResult.value.pctUnavailable) {
+          setAvailability(sessionId, false);
+          setLxc(sessionId, []);
+        } else {
+          setAvailability(sessionId, true);
+          setLxc(sessionId, lxcResult.value.containers);
+        }
       } else {
-        setAvailability(sessionId, true);
-        setLxc(sessionId, result.containers);
+        console.error("[useProxmox] proxmox_list_lxc failed:", lxcResult.reason);
       }
-    } catch (err) {
-      console.error("[useProxmox] proxmox_list_lxc failed:", err);
+
+      // VM result
+      if (vmResult.status === "fulfilled") {
+        if (vmResult.value.qmUnavailable) {
+          setVmAvailability(sessionId, false);
+          setVms(sessionId, []);
+        } else {
+          setVmAvailability(sessionId, true);
+          setVms(sessionId, vmResult.value.vms);
+        }
+      } else {
+        console.error("[useProxmox] proxmox_list_vms failed:", vmResult.reason);
+      }
     } finally {
       setLoading(sessionId, false);
     }
-  }, [sessionId, setLxc, setAvailability, setLoading]);
+  }, [sessionId, setLxc, setVms, setAvailability, setVmAvailability, setLoading]);
 
   useEffect(() => {
     if (!sessionId) return;
 
     mountedRef.current = true;
-    void fetchContainers();
+    void fetchAll();
 
     const timer = setInterval(() => {
       if (mountedRef.current) {
-        void fetchContainers();
+        void fetchAll();
       }
     }, POLL_INTERVAL_MS);
 
@@ -86,7 +111,7 @@ export function useProxmox(sessionId: string) {
       mountedRef.current = false;
       clearInterval(timer);
     };
-  }, [sessionId, fetchContainers]);
+  }, [sessionId, fetchAll]);
 
-  return { refresh: fetchContainers };
+  return { refresh: fetchAll };
 }

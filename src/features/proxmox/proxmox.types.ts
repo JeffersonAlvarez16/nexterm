@@ -2,4 +2,10 @@
 //
 // Re-exports store types for use within the proxmox feature module.
 
-export type { LxcRow, SnapshotRow, LxcAction } from "../../stores/proxmoxStore";
+export type {
+  LxcRow,
+  VmRow,
+  SnapshotRow,
+  LxcAction,
+  GuestKind,
+} from "../../stores/proxmoxStore";

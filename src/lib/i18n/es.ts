@@ -604,9 +604,12 @@ export const es: Record<TranslationKey, string> = {
   // Proxmox panel
   "proxmox.unavailable":
     "No es un host Proxmox o sin permisos suficientes (pct requiere root)",
-  "proxmox.loading": "Cargando contenedores LXC...",
-  "proxmox.empty": "No se encontraron contenedores LXC",
+  "proxmox.loading": "Cargando equipos Proxmox...",
+  "proxmox.empty": "No se encontraron contenedores ni máquinas virtuales",
   "proxmox.refresh": "Actualizar",
+  // Encabezados de sección para los dos tipos de invitado
+  "proxmox.containers": "Contenedores",
+  "proxmox.virtualMachines": "Máquinas Virtuales",
   "proxmox.col.vmid": "VMID",
   "proxmox.col.name": "Nombre",
   "proxmox.col.status": "Estado",
@@ -625,7 +628,7 @@ export const es: Record<TranslationKey, string> = {
   "proxmox.snapshot.rollback.confirm": "Confirmar Rollback",
   "proxmox.snapshot.rollback.cancel": "Cancelar",
   "proxmox.snapshot.rollback.warning":
-    "Advertencia: el rollback descartará el estado actual del contenedor",
+    "Advertencia: el rollback descartará el estado actual del equipo",
   "proxmox.snapshot.delete.arm": "Eliminar",
   "proxmox.snapshot.delete.confirm": "Confirmar Eliminación",
   "proxmox.snapshot.delete.cancel": "Cancelar",

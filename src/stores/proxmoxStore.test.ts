@@ -1,14 +1,16 @@
-// stores/proxmoxStore.test.ts — TDD: per-session LXC container state store
+// stores/proxmoxStore.test.ts — TDD: per-session LXC + VM guest state store
 
 import { describe, it, expect, beforeEach } from "vitest";
 
-import { useProxmoxStore, type LxcRow, type SnapshotRow } from "./proxmoxStore";
+import { useProxmoxStore, type LxcRow, type VmRow, type SnapshotRow } from "./proxmoxStore";
 
 function resetStore() {
   useProxmoxStore.setState({
     containers: new Map(),
+    vms: new Map(),
     snapshots: new Map(),
     availability: new Map(),
+    vmAvailability: new Map(),
     loading: new Map(),
   });
 }
@@ -18,6 +20,14 @@ function makeLxcRow(vmid: number): LxcRow {
     vmid,
     status: "running",
     name: `ct-${vmid}`,
+  };
+}
+
+function makeVmRow(vmid: number): VmRow {
+  return {
+    vmid,
+    name: `vm-${vmid}`,
+    status: "running",
   };
 }
 
@@ -50,6 +60,48 @@ describe("proxmoxStore — containers", () => {
     setLxc("session-b", [makeLxcRow(200), makeLxcRow(201)]);
     expect(useProxmoxStore.getState().containers.get("session-a")).toHaveLength(1);
     expect(useProxmoxStore.getState().containers.get("session-b")).toHaveLength(2);
+  });
+});
+
+describe("proxmoxStore — vms", () => {
+  beforeEach(resetStore);
+
+  it("setVms stores rows per sessionId", () => {
+    const { setVms } = useProxmoxStore.getState();
+    const rows = [makeVmRow(100), makeVmRow(101)];
+    setVms("session-1", rows);
+    expect(useProxmoxStore.getState().vms.get("session-1")).toHaveLength(2);
+  });
+
+  it("setVms replaces previous rows for the same session", () => {
+    const { setVms } = useProxmoxStore.getState();
+    setVms("session-1", [makeVmRow(100)]);
+    setVms("session-1", [makeVmRow(101), makeVmRow(102)]);
+    const rows = useProxmoxStore.getState().vms.get("session-1");
+    expect(rows).toHaveLength(2);
+    expect(rows![0]!.vmid).toBe(101);
+  });
+
+  it("setVms does not affect containers or other sessions", () => {
+    const { setVms, setLxc } = useProxmoxStore.getState();
+    setLxc("session-a", [makeLxcRow(100)]);
+    setVms("session-a", [makeVmRow(200)]);
+    expect(useProxmoxStore.getState().containers.get("session-a")).toHaveLength(1);
+    expect(useProxmoxStore.getState().vms.get("session-a")).toHaveLength(1);
+  });
+
+  it("vmAvailability is undefined by default", () => {
+    expect(useProxmoxStore.getState().vmAvailability.get("session-x")).toBeUndefined();
+  });
+
+  it("setVmAvailability true marks session as available", () => {
+    useProxmoxStore.getState().setVmAvailability("session-1", true);
+    expect(useProxmoxStore.getState().vmAvailability.get("session-1")).toBe(true);
+  });
+
+  it("setVmAvailability false marks session as unavailable", () => {
+    useProxmoxStore.getState().setVmAvailability("session-1", false);
+    expect(useProxmoxStore.getState().vmAvailability.get("session-1")).toBe(false);
   });
 });
 
@@ -122,19 +174,23 @@ describe("proxmoxStore — loading", () => {
 describe("proxmoxStore — clearSession", () => {
   beforeEach(resetStore);
 
-  it("clearSession removes containers, snapshots, availability, and loading for the session", () => {
+  it("clearSession removes containers, vms, snapshots, availability, vmAvailability, and loading for the session", () => {
     const store = useProxmoxStore.getState();
     store.setLxc("session-1", [makeLxcRow(100)]);
+    store.setVms("session-1", [makeVmRow(200)]);
     store.setSnapshots("session-1", 100, [makeSnapshot("snap1")]);
     store.setAvailability("session-1", true);
+    store.setVmAvailability("session-1", true);
     store.setLoading("session-1", true);
 
     useProxmoxStore.getState().clearSession("session-1");
 
     const state = useProxmoxStore.getState();
     expect(state.containers.get("session-1")).toBeUndefined();
+    expect(state.vms.get("session-1")).toBeUndefined();
     expect(state.snapshots.get("session-1:100")).toBeUndefined();
     expect(state.availability.get("session-1")).toBeUndefined();
+    expect(state.vmAvailability.get("session-1")).toBeUndefined();
     expect(state.loading.get("session-1")).toBeUndefined();
   });
 
