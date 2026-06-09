@@ -4,11 +4,17 @@
 // Provides checkForUpdate, downloadAndInstall, and dismissUpdate actions.
 // Check errors are swallowed silently (REQ-1). Download errors go to store.
 
-import { useCallback, useRef } from "react";
+import { useCallback } from "react";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { useUpdateStore } from "../../stores/updateStore";
 import type { UpdateInfo } from "../../stores/updateStore";
+
+// Module-level so every useUpdater() instance shares the same pending update.
+// A per-hook useRef breaks the flow: AboutDialog checks (storing the update in
+// its own ref) but UpdateDialog installs from a different instance whose ref
+// is empty, making "Update now" a silent no-op.
+let pendingUpdate: Awaited<ReturnType<typeof check>> | null = null;
 
 interface UseUpdater {
   checkForUpdate: () => Promise<void>;
@@ -26,10 +32,6 @@ export function useUpdater(): UseUpdater {
   const { setStatus, setUpdateInfo, setProgress, setError, dismiss } =
     useUpdateStore();
 
-  // Keep a ref to the update object so downloadAndInstall can access it
-  // without depending on React render cycles.
-  const updateRef = useRef<Awaited<ReturnType<typeof check>> | null>(null);
-
   const checkForUpdate = useCallback(async () => {
     try {
       setStatus("checking");
@@ -37,11 +39,12 @@ export function useUpdater(): UseUpdater {
 
       if (!update) {
         // No update available — go back to idle silently
+        pendingUpdate = null;
         setStatus("idle");
         return;
       }
 
-      updateRef.current = update;
+      pendingUpdate = update;
 
       const info: UpdateInfo = {
         version: update.version,
@@ -58,7 +61,7 @@ export function useUpdater(): UseUpdater {
   }, [setStatus, setUpdateInfo]);
 
   const downloadAndInstall = useCallback(async () => {
-    const update = updateRef.current;
+    const update = pendingUpdate;
     if (!update) return;
 
     try {
