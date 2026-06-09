@@ -14,6 +14,7 @@
     "fs:allow-temp-meta-recursive",
     "updater:default",
     "process:allow-restart",
-    "opener:allow-open-url"
+    "opener:allow-open-url",
+    "opener:allow-default-urls"
   ]
 }

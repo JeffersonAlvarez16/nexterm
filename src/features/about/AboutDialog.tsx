@@ -33,8 +33,9 @@ export function AboutDialog({ open, onClose }: AboutDialogProps) {
   }, [open]);
 
   const handleViewOnGitHub = () => {
-    openUrl(REPO_URL).catch(() => {
-      // Silently ignore — browser fallback not available in Tauri context
+    // Requires the opener capability `allow-open-url` + `allow-default-urls`.
+    openUrl(REPO_URL).catch((err) => {
+      console.error("Failed to open repository URL:", err);
     });
   };
 
