@@ -2,34 +2,26 @@
 # Release Workflow for NexTerm
 # ============================================================================
 #
-# NOTE ABOUT UPDATER SIGNING:
+# AUTO-UPDATER SIGNING — ENABLED
 #
-# The release workflow intentionally disables updater artifacts and does not pass
-# TAURI_SIGNING_PRIVATE_KEY yet. The previous v0.2.3 workflow run built bundles
-# but failed while signing updater artifacts because the configured signing secret
-# was invalid: "failed to decode secret key ... Missing comment in secret key".
+# Tauri updater artifacts (latest.json + .sig files) are generated for every
+# release. macOS builds are code-signed and notarized via Apple Developer ID
+# (team RFMR899Y3Z) using an App Store Connect API key for notarization.
 #
-# Until a valid Tauri updater keypair is configured, releases should still publish
-# installers for all OS targets. Re-enable `bundle.createUpdaterArtifacts` and add
-# the signing env vars back only after verifying the secret with
-# `npx @tauri-apps/cli signer sign` locally.
-#
-# Auto-update signing setup, when ready:
-# 1. npx @tauri-apps/cli signer generate -w ~/.tauri/nexterm.key
-# 2. Add the private key to TAURI_SIGNING_PRIVATE_KEY.
-# 3. Add password to TAURI_SIGNING_PRIVATE_KEY_PASSWORD only if the key has one.
-# 4. Copy the public key into tauri.conf.json → plugins.updater.pubkey.
-# 5. Verify the endpoint points to the real GitHub release latest.json.
+# Required GitHub repository secrets:
+#   See docs/RELEASE_SIGNING.md for the full list and setup instructions.
 #
 # CRITICAL RELEASES:
 #   To mark a release as critical (forces mandatory update with no dismiss),
-#   include [CRITICAL] anywhere in the release notes body when creating the tag/release.
-#   The app client parses the release body for this marker.
+#   include [CRITICAL] anywhere in the release notes body when creating the
+#   tag/release. The app client parses the release body for this marker.
 #
 # HOW IT WORKS:
-#   - On tag push (v*), this workflow builds for all platforms
-#   - Releases are published immediately (not draft)
-#   - Auto-update latest.json is disabled until updater signing is reconfigured
+#   - On tag push (v*), this workflow builds for all platforms.
+#   - macOS builds a universal binary (arm64 + x86_64 in one DMG).
+#   - Releases are published immediately (not draft).
+#   - tauri-action uploads latest.json automatically when
+#     bundle.createUpdaterArtifacts is true in tauri.conf.json.
 # ============================================================================
 
 name: Release NexTerm
@@ -55,16 +47,18 @@ jobs:
       matrix:
         include:
           - platform: macos-latest
-            target: aarch64-apple-darwin
-            label: macOS-ARM64
-          - platform: macos-latest
-            target: x86_64-apple-darwin
-            label: macOS-Intel
+            # universal-apple-darwin is a Tauri abstraction that compiles both
+            # aarch64 and x86_64 and lipo-merges them into a single DMG.
+            target: universal-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            label: macOS-Universal
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+            rust_targets: x86_64-unknown-linux-gnu
             label: Linux-x64
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
+            rust_targets: x86_64-pc-windows-msvc
             label: Windows-x64
 
     runs-on: ${{ matrix.platform }}
@@ -76,7 +70,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.rust_targets }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -148,20 +142,45 @@ jobs:
             echo '### Downloads'
             echo '| Platform | Artifact |'
             echo '|---|---|'
-            echo '| macOS Apple Silicon | `.dmg` |'
-            echo '| macOS Intel | `.dmg` |'
+            echo '| macOS (Universal — Apple Silicon + Intel) | `.dmg` |'
             echo '| Linux x64 | `.deb` + `.rpm` + `.AppImage` |'
             echo '| Windows x64 | `.msi` + `.exe` |'
             echo
-            echo 'Updater artifacts are temporarily disabled until the Tauri updater signing key is reconfigured.'
             echo 'See CHANGELOG.md for the full project history.'
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
+
+      # macOS only: write the App Store Connect API private key (.p8) to disk
+      # so that the notarization tooling can read it via APPLE_API_KEY_PATH.
+      # The conventional location (~/.private_keys/) is searched automatically
+      # by xcrun notarytool and Tauri's notarization helper.
+      - name: Write App Store Connect API key
+        if: matrix.platform == 'macos-latest'
+        id: apple_api_key
+        shell: bash
+        run: |
+          mkdir -p ~/.private_keys
+          KEY_PATH="${HOME}/.private_keys/AuthKey_${{ secrets.APPLE_API_KEY }}.p8"
+          printf '%s' "${{ secrets.APPLE_API_KEY_CONTENT }}" > "${KEY_PATH}"
+          chmod 600 "${KEY_PATH}"
+          echo "path=${KEY_PATH}" >> "$GITHUB_OUTPUT"
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Tauri updater signing
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS code signing (Apple Developer ID certificate as base64 .p12)
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # macOS notarization (App Store Connect API key)
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_PATH: ${{ steps.apple_api_key.outputs.path }}
         with:
           tagName: ${{ steps.release_notes.outputs.tag_name }}
           releaseName: "NexTerm ${{ steps.release_notes.outputs.tag_name }}"
