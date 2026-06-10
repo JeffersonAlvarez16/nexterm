@@ -1,0 +1,174 @@
+/* ── NexTerm design tokens ─────────────────────────────────────────────── */
+:root {
+	--bg: #05070d;
+	--bg-raise: #0a0f1e;
+	--panel: #0c1322;
+	--panel-edge: rgba(99, 130, 199, 0.16);
+	--ink: #e8eefb;
+	--ink-dim: #9aa7c2;
+	--ink-faint: #5b6884;
+	--cyan: #67e8f9;
+	--blue: #38bdf6;
+	--indigo: #6366f1;
+	--violet: #818cf8;
+	--aurora: linear-gradient(100deg, var(--cyan) 0%, var(--blue) 45%, var(--violet) 100%);
+	--mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+	--display: 'Bricolage Grotesque', system-ui, sans-serif;
+	--radius: 14px;
+	--ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* {
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+}
+
+html {
+	scroll-behavior: smooth;
+	color-scheme: dark;
+}
+
+body {
+	background: var(--bg);
+	color: var(--ink);
+	font-family: var(--display);
+	font-optical-sizing: auto;
+	line-height: 1.6;
+	-webkit-font-smoothing: antialiased;
+	overflow-x: hidden;
+}
+
+::selection {
+	background: rgba(56, 189, 246, 0.35);
+	color: #fff;
+}
+
+a {
+	color: inherit;
+}
+
+/* ── Atmosphere: grain + aurora glows + orbital arcs ───────────────────── */
+.atmosphere {
+	position: fixed;
+	inset: 0;
+	z-index: -1;
+	overflow: hidden;
+	background:
+		radial-gradient(ellipse 90rem 42rem at 70% -8%, rgba(56, 189, 246, 0.14), transparent 60%),
+		radial-gradient(ellipse 60rem 36rem at 8% 30%, rgba(99, 102, 241, 0.1), transparent 65%),
+		radial-gradient(ellipse 70rem 50rem at 50% 115%, rgba(103, 232, 249, 0.07), transparent 60%),
+		var(--bg);
+}
+
+.atmosphere::before {
+	/* film grain */
+	content: '';
+	position: absolute;
+	inset: -50%;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E");
+	animation: grain 9s steps(6) infinite;
+}
+
+.atmosphere::after {
+	/* orbital arcs echoing the app icon */
+	content: '';
+	position: absolute;
+	left: 50%;
+	top: -38vw;
+	width: 110vw;
+	height: 110vw;
+	transform: translateX(-50%);
+	border-radius: 50%;
+	border: 1.5px solid rgba(96, 165, 250, 0.09);
+	box-shadow:
+		0 0 0 9vw rgba(96, 165, 250, 0.0),
+		inset 0 0 0 1.5px rgba(96, 165, 250, 0.0),
+		0 0 120px rgba(56, 189, 246, 0.06);
+}
+
+@keyframes grain {
+	0%, 100% { transform: translate(0, 0); }
+	20% { transform: translate(-4%, 3%); }
+	40% { transform: translate(3%, -4%); }
+	60% { transform: translate(-3%, -2%); }
+	80% { transform: translate(4%, 4%); }
+}
+
+/* ── Shared primitives ─────────────────────────────────────────────────── */
+.wrap {
+	width: min(1120px, 92vw);
+	margin-inline: auto;
+}
+
+.kicker {
+	font-family: var(--mono);
+	font-size: 0.78rem;
+	font-weight: 500;
+	letter-spacing: 0.22em;
+	text-transform: uppercase;
+	color: var(--blue);
+}
+
+.aurora-text {
+	background: var(--aurora);
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+}
+
+.btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.6rem;
+	font-family: var(--mono);
+	font-size: 0.92rem;
+	font-weight: 500;
+	text-decoration: none;
+	padding: 0.85rem 1.5rem;
+	border-radius: 10px;
+	border: 1px solid transparent;
+	transition: transform 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out), border-color 0.25s;
+	will-change: transform;
+}
+
+.btn-primary {
+	color: #03111c;
+	background: var(--aurora);
+	box-shadow: 0 8px 32px rgba(56, 189, 246, 0.35);
+}
+
+.btn-primary:hover {
+	transform: translateY(-2px);
+	box-shadow: 0 14px 44px rgba(56, 189, 246, 0.5);
+}
+
+.btn-ghost {
+	color: var(--ink);
+	border-color: var(--panel-edge);
+	background: rgba(13, 20, 36, 0.6);
+	backdrop-filter: blur(8px);
+}
+
+.btn-ghost:hover {
+	border-color: rgba(56, 189, 246, 0.45);
+	transform: translateY(-2px);
+}
+
+/* ── Scroll reveal ─────────────────────────────────────────────────────── */
+.reveal {
+	opacity: 0;
+	transform: translateY(26px);
+	transition: opacity 0.7s var(--ease-out), transform 0.7s var(--ease-out);
+}
+
+.reveal.in {
+	opacity: 1;
+	transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.reveal { opacity: 1; transform: none; transition: none; }
+	.atmosphere::before { animation: none; }
+	html { scroll-behavior: auto; }
+}

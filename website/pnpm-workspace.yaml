@@ -1,0 +1,4 @@
+# Marks website/ as its own pnpm root so it does not join the app workspace.
+
+allowBuilds:
+  esbuild: true

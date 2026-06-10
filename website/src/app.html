@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<link rel="icon" href="%sveltekit.assets%/icon.svg" type="image/svg+xml" />
+		<meta name="theme-color" content="#05070d" />
+		<title>NexTerm — SSH terminal with a built-in vault and Proxmox control</title>
+		<meta
+			name="description"
+			content="NexTerm is a fast, native SSH terminal for macOS, Windows and Linux with an encrypted password vault and first-class Proxmox LXC/QEMU management. Signed, notarized, auto-updating."
+		/>
+		<meta property="og:title" content="NexTerm — your servers, your secrets, one terminal" />
+		<meta
+			property="og:description"
+			content="Native SSH client with an AES-256-GCM password vault and Proxmox VM/container control. Free download for macOS, Windows and Linux."
+		/>
+		<meta property="og:type" content="website" />
+		<meta property="og:image" content="%sveltekit.assets%/og.png" />
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap"
+			rel="stylesheet"
+		/>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>
